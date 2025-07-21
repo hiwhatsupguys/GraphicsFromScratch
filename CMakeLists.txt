@@ -37,3 +37,4 @@ target_link_libraries(${EXECUTABLE_NAME} PUBLIC
 #	SDL3_image::SDL3_image	# remove if you are not using SDL_image
     SDL3::SDL3              # If using satelite libraries, SDL must be the last item in the list. 
 )
+
