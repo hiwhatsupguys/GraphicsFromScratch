@@ -14,6 +14,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <glm/glm.hpp>
+
 SDL_Window *window;
 SDL_GPUDevice *device;
 SDL_GPUBuffer *vertexBuffer;
@@ -93,6 +95,11 @@ SDL_GPUShader *LoadShader(SDL_GPUDevice *device, const char *shaderFilename,
     return shader;
 }
 
+struct Vertex {
+    glm::vec3 position;
+    glm::u8vec4 color;
+};
+
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     /* Create the window */
@@ -114,7 +121,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_ClaimWindowForGPUDevice(device, window);
 
     SDL_GPUShader *vertexShader =
-        LoadShader(device, "RawTriangle.vert", 0, 0, 0, 0);
+        LoadShader(device, "PositionColor.vert", 0, 0, 0, 0);
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(");
         return SDL_APP_FAILURE;
@@ -128,23 +135,112 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
 
     SDL_GPUColorTargetDescription colorTargetDescriptions[1];
-    colorTargetDescriptions[0] = {};
+     colorTargetDescriptions[0] = {};
     colorTargetDescriptions[0].format =
         SDL_GetGPUSwapchainTextureFormat(device, window);
 
+    SDL_GPUGraphicsPipelineTargetInfo targetInfo{};
+    targetInfo.num_color_targets = 1;
+    targetInfo.color_target_descriptions = colorTargetDescriptions;
+
+    SDL_GPUVertexAttribute vertexAttributes[2];
+    // location, buffer_slot, format, offset
+    // location: float3 Position in Input in PositionColor.vert
+    // buffer_slot: 0 for Input
+    // format: float3 Position
+    // offset: how many bytes over from the start of Input
+    vertexAttributes[0] =
+        SDL_GPUVertexAttribute{0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, 0};
+    vertexAttributes[1] =
+        SDL_GPUVertexAttribute{1, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
+                               sizeof(Vertex::position)};
+
+    // describe the vertex buffers
+    SDL_GPUVertexBufferDescription vertexBufferDescriptions[1];
+    // slot, pitch, input_rate, instance_step_rate
+    // vertexBufferDescriptions[0] = SDL_GPUVertexBufferDescription{0,
+    // sizeof(glm::vec3), SDL_GPU_VERTEXINPUTRATE_VERTEX, 0};
+    vertexBufferDescriptions[0].slot = 0; // vertex buffer set to slot 0
+    vertexBufferDescriptions[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+    vertexBufferDescriptions[0].instance_step_rate = 0;
+    vertexBufferDescriptions[0].pitch =
+        sizeof(Vertex); // how many bytes to jump after each cycle
+
+    SDL_GPUVertexInputState vertexInputState{};
+    vertexInputState.num_vertex_buffers = 1;
+    vertexInputState.vertex_buffer_descriptions = vertexBufferDescriptions;
+    vertexInputState.num_vertex_attributes = 2;
+    vertexInputState.vertex_attributes = vertexAttributes;
+
+    // MAKE PIPELINE
     SDL_GPUGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.vertex_shader = vertexShader;
     pipelineInfo.fragment_shader = fragmentShader;
     pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-    pipelineInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-    pipelineInfo.target_info.num_color_targets = 1; // size of colorTargetDescriptions
-    pipelineInfo.target_info.color_target_descriptions =
-        colorTargetDescriptions;
+    //pipelineInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    pipelineInfo.target_info = targetInfo;
+    pipelineInfo.vertex_input_state = vertexInputState;
 
     fillPipeline = SDL_CreateGPUGraphicsPipeline(device, &pipelineInfo);
+    if (!fillPipeline) {
+        SDL_Log("Failed to create graphics pipeline, error: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
 
     SDL_ReleaseGPUShader(device, vertexShader);
     SDL_ReleaseGPUShader(device, fragmentShader);
+
+    Vertex vertices[3] = {
+        Vertex{{0.0f, 0.5f, 0.0f}, {255, 0, 0, 255}},
+        Vertex{{0.5f, -0.5f, 0.0f}, {0, 255, 0, 255}},
+        Vertex{{-0.5f, -0.5f, 0.0f}, {0, 0, 255, 255}},
+    };
+
+    SDL_GPUBufferCreateInfo bufferCreateInfo{};
+    bufferCreateInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+    bufferCreateInfo.size = sizeof(vertices); // size of the whole vertex buffer
+
+    vertexBuffer = SDL_CreateGPUBuffer(device, &bufferCreateInfo);
+
+    // we have to use a transfer buffer to upload triangle data into the vertex buffer
+    SDL_GPUTransferBufferCreateInfo transferBufferInfo{};
+    transferBufferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    transferBufferInfo.size =
+        sizeof(vertices); // also the size of the vertex buffer
+
+    transferBuffer = SDL_CreateGPUTransferBuffer(device, &transferBufferInfo);
+
+    Vertex *transferData = static_cast<Vertex *>(
+        SDL_MapGPUTransferBuffer(device, transferBuffer, false));
+
+    SDL_memcpy(transferData, vertices, sizeof(vertices));
+
+    //transferData[0] = vertices[0];
+    //transferData[1] = vertices[1];
+    //transferData[2] = vertices[2];
+
+    SDL_UnmapGPUTransferBuffer(device, transferBuffer);
+
+    SDL_GPUCommandBuffer *uploadCommandBuffer =
+        SDL_AcquireGPUCommandBuffer(device);
+
+    // upload transfer data to vertex buffer
+    SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
+
+    SDL_GPUTransferBufferLocation transferLocation{};
+    transferLocation.transfer_buffer = transferBuffer;
+    transferLocation.offset = 0;
+
+    SDL_GPUBufferRegion bufferRegion{};
+    bufferRegion.buffer = vertexBuffer;
+    bufferRegion.size = sizeof(vertices);
+    bufferRegion.offset = 0;
+
+    SDL_UploadToGPUBuffer(copyPass, &transferLocation, &bufferRegion, false);
+
+    SDL_EndGPUCopyPass(copyPass);
+
+    SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
 
 
     return SDL_APP_CONTINUE;
@@ -188,7 +284,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     SDL_GPUColorTargetInfo colorTargetInfo{};
 
     // replace previous color, clear (screen?) with color
-    //colorTargetInfo.clear_color =
+    // colorTargetInfo.clear_color =
     //    SDL_FColor{0xFB / 255.0f, 0xEA / 255.0f, 0xFF / 255.0f, 255 / 255.0f};
     colorTargetInfo.clear_color =
         SDL_FColor{0x71 / 255.0f, 0x79 / 255.0f, 0x7E / 255.0f, 255 / 255.0f};
@@ -208,10 +304,15 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, nullptr);
 
     // bind the graphics pipeline
-     SDL_BindGPUGraphicsPipeline(renderPass, fillPipeline);
+    SDL_BindGPUGraphicsPipeline(renderPass, fillPipeline);
 
     // DRAW SOMETHING
-     SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
+    SDL_GPUBufferBinding vertexBufferBinding{};
+    vertexBufferBinding.buffer = vertexBuffer;
+    vertexBufferBinding.offset = 0;
+    SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
+
+    SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
 
     // END RENDER PASS
 

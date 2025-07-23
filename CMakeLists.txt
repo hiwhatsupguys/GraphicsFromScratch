@@ -4,6 +4,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 
+set(CMAKE_CXX_STANDARD 23)
 
 # Enable Hot Reload for MSVC compilers if supported.
 if (POLICY CMP0141)
@@ -22,6 +23,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
 # This assumes the SDL source is available in vendored/SDL
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
+add_subdirectory(vendored/glm EXCLUDE_FROM_ALL)
 
 # Include sub-projects.
 add_subdirectory ("GraphicsFromScratch")
@@ -30,11 +32,14 @@ target_include_directories(${EXECUTABLE_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR
 
 target_compile_definitions(${EXECUTABLE_NAME} PUBLIC SDL_MAIN_USE_CALLBACKS)
 
+
+
 # Link SDL to our executable. This also makes its include directory available to us. 
 target_link_libraries(${EXECUTABLE_NAME} PUBLIC 
 #	SDL3_ttf::SDL3_ttf      # remove if you are not using SDL_ttf
 #	SDL3_mixer::SDL3_mixer  # remove if you are not using SDL_mixer
 #	SDL3_image::SDL3_image	# remove if you are not using SDL_image
     SDL3::SDL3              # If using satelite libraries, SDL must be the last item in the list. 
+    glm::glm-header-only
 )
 
