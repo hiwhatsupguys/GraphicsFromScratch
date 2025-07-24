@@ -16,6 +16,7 @@ project ("GraphicsFromScratch")
 
 set(EXECUTABLE_NAME ${PROJECT_NAME})
 
+
 # set the output directory for built objects.
 # This makes sure that the dynamic library goes into the build directory automatically.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
