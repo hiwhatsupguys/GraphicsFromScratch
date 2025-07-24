@@ -15,6 +15,7 @@
 #include <SDL3/SDL_main.h>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 SDL_Window* window;
 SDL_GPUDevice* device;
@@ -25,7 +26,12 @@ SDL_GPUTransferBuffer* transferBuffer;
 // specifies which shaders to use, how many buffers, vertex inputs, color
 // blending
 SDL_GPUGraphicsPipeline* fillPipeline;
-//SDL_GPUTexture *texture;
+
+Uint64 currentTime;
+Uint64 previousTime;
+float deltaTime;
+
+float rotation;
 
 SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const char* shaderFilename,
     const Uint32 samplerCount,
@@ -53,24 +59,24 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const char* shaderFilename,
     if (backendFormats & SDL_GPU_SHADERFORMAT_SPIRV) {
         SDL_asprintf(&fullPath, "Content/Shaders/Compiled/SPIRV/%s.spv",
             shaderFilename);
-        //SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/SPIRV/%s.spv",
-        //             SDL_GetBasePath(), shaderFilename);
+        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/SPIRV/%s.spv",
+        //              SDL_GetBasePath(), shaderFilename);
         format = SDL_GPU_SHADERFORMAT_SPIRV;
         entrypoint = "main";
     }
     else if (backendFormats & SDL_GPU_SHADERFORMAT_MSL) {
         SDL_asprintf(&fullPath, "Content/Shaders/Compiled/MSL/%s.msl",
             shaderFilename);
-        //SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/MSL/%s.msl",
-        //             SDL_GetBasePath(), shaderFilename);
+        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/MSL/%s.msl",
+        //              SDL_GetBasePath(), shaderFilename);
         format = SDL_GPU_SHADERFORMAT_MSL;
         entrypoint = "main0";
     }
     else if (backendFormats & SDL_GPU_SHADERFORMAT_DXIL) {
         SDL_asprintf(&fullPath, "Content/Shaders/Compiled/DXIL/%s.dxil",
             shaderFilename);
-        //SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/DXIL/%s.dxil",
-        //             SDL_GetBasePath(), shaderFilename);
+        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/DXIL/%s.dxil",
+        //              SDL_GetBasePath(), shaderFilename);
         format = SDL_GPU_SHADERFORMAT_DXIL;
         entrypoint = "main";
     }
@@ -108,11 +114,19 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const char* shaderFilename,
     return shader;
 }
 
-struct TimeUniformBuffer {
-    float time;
+struct MatrixUniformBuffer {
+    glm::mat4 matrix;
 };
 
-static TimeUniformBuffer timeUniformBuffer;
+static MatrixUniformBuffer matrixUniform;
+
+
+// struct TimeUniformBuffer {
+//     float time;
+//     //glm::mat4 matrix;
+// };
+
+// static TimeUniformBuffer timeUniform;
 
 struct Vertex {
     glm::vec3 position;
@@ -129,7 +143,7 @@ Vertex vertices[4] = {
 };
 
 Uint16 indices[6] = { 0, 1, 2, 0, 2, 3 };
-//Uint16 indices[3] = {0, 1, 2};
+// Uint16 indices[3] = {0, 1, 2};
 
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
@@ -153,16 +167,16 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_ClaimWindowForGPUDevice(device, window);
 
     SDL_GPUShader* vertexShader =
-        LoadShader(device, "PositionColor.vert", 0, 0, 0, 0);
+        LoadShader(device, "PositionColorTransform.vert", 0, 1, 0, 0);
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(");
         return SDL_APP_FAILURE;
     }
 
     SDL_GPUShader* fragmentShader =
-        LoadShader(device, "CustomColor.frag", 0, 1, 0, 0);
-    //SDL_GPUShader *fragmentShader =
-    //    LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
+        LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
+    // SDL_GPUShader *fragmentShader =
+    //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(");
         return SDL_APP_FAILURE;
@@ -236,6 +250,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
     // we have to use a transfer buffer to upload triangle data into the vertex
     // buffer
+    // transfer buffer: special GPU memory that is used to transfer data from
+    // the CPU to the GPU
     SDL_GPUTransferBufferCreateInfo transferBufferCreateInfo{};
     transferBufferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     transferBufferCreateInfo.size =
@@ -250,11 +266,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_memcpy(transferData, vertices, vertexBufferCreateInfo.size);
     // copy index buffer to next section
     // dest, source
-    // Uint16* ptr = static_cast<void*>(static_cast<Uint16*>(transferData) +
-    // vertexBufferCreateInfo.size);
-    void* ptr = static_cast<void*>(static_cast<char*>(transferData) +
-        vertexBufferCreateInfo.size);
-    SDL_memcpy(ptr, indices, indexBufferCreateInfo.size);
+    void* transferDataIndicesPtr = static_cast<void*>(
+        static_cast<char*>(transferData) + vertexBufferCreateInfo.size);
+    SDL_memcpy(transferDataIndicesPtr, indices, indexBufferCreateInfo.size);
 
     // transferData[0] = vertices[0];
     // transferData[1] = vertices[1];
@@ -268,26 +282,31 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     // upload transfer data to vertex buffer
     SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
 
-    SDL_GPUTransferBufferLocation transferLocation{};
-    transferLocation.transfer_buffer = transferBuffer;
-    transferLocation.offset = 0;
+    SDL_GPUTransferBufferLocation transferBufferLocation{};
+    transferBufferLocation.transfer_buffer = transferBuffer;
+    transferBufferLocation.offset = 0;
 
     SDL_GPUBufferRegion bufferRegion{};
     bufferRegion.buffer = vertexBuffer;
     bufferRegion.size = vertexBufferCreateInfo.size;
     bufferRegion.offset = 0; // maybe change
-    SDL_UploadToGPUBuffer(copyPass, &transferLocation, &bufferRegion, false);
+    SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
+        false);
 
-    transferLocation.offset =
+    transferBufferLocation.offset =
         vertexBufferCreateInfo.size; // move over to the index buffer section
     bufferRegion.buffer = indexBuffer;
     bufferRegion.size = indexBufferCreateInfo.size;
     bufferRegion.offset = 0;
-    SDL_UploadToGPUBuffer(copyPass, &transferLocation, &bufferRegion, false);
+    SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
+        false);
 
     SDL_EndGPUCopyPass(copyPass);
 
     SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
+
+    currentTime = SDL_GetTicksNS();
+    previousTime = currentTime;
 
     return SDL_APP_CONTINUE;
 }
@@ -303,6 +322,18 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
 /* This function runs once per frame, and is the heart of the program. */
 SDL_AppResult SDL_AppIterate(void* appstate) {
+
+    currentTime = SDL_GetTicksNS();
+    deltaTime = (currentTime - previousTime) / 1e9f;
+    // rotation += deltaTime: 1 radian per second
+    // want: pi radians per second
+    rotation += deltaTime * (SDL_PI_F) / 2;
+
+    previousTime = currentTime;
+
+    int windowWidth, windowHeight;
+    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+
     // list of commands to send to the gpu for fast execution
     SDL_GPUCommandBuffer* commandBuffer = SDL_AcquireGPUCommandBuffer(device);
 
@@ -364,8 +395,26 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding,
         SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
-    timeUniformBuffer.time = SDL_GetTicksNS() / 1e9f;
-    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &timeUniformBuffer, sizeof(TimeUniformBuffer));
+    // timeUniform.time = SDL_GetTicksNS() / 1e9f;
+    // SDL_PushGPUFragmentUniformData(commandBuffer, 0, &timeUniform,
+    // sizeof(TimeUniformBuffer));
+    //float time = SDL_GetTicksNS() / 1e9f;
+
+// perspective(T fovy, T aspect, T zNear, T zFar)
+    float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+
+    glm::mat4 viewMatrix = glm::mat4(1.0f);
+    viewMatrix = glm::translate(viewMatrix, glm::vec3(0.0f, 0.0f, -3.0f));
+
+    glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
+
+    glm::mat4 rotationMatrix = glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(1.0f, -1.0f, 1.0f));
+
+    matrixUniform.matrix = projectionMatrix * viewMatrix * rotationMatrix;
+    
+
+    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &matrixUniform,
+        sizeof(matrixUniform));
 
     SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0, 0,
         0);
