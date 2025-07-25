@@ -120,16 +120,17 @@ static MatrixUniformBuffer matrixUniform;
 
 struct Vertex {
     glm::vec3 position;
+    SDL_FColor color;
     glm::vec2 uv;
 };
 
 // rect
 Vertex vertices[4] = {
 
-    Vertex{{-0.5f, 0.5f, 0.0f}, {0, 0}},
-    Vertex{{0.5f, 0.5f, 0.0f}, {1, 0}},
-    Vertex{{0.5f, -0.5f, 0.0f}, {1, 1}},
-    Vertex{{-0.5f, -0.5f, 0.0f}, {0, 1}},
+    Vertex{{-0.5f, 0.5f, 0.0f}, {1, 0, 0, 1}, {0, 0}},
+    Vertex{{0.5f, 0.5f, 0.0f}, {0, 1, 0, 1}, {1, 0}},
+    Vertex{{0.5f, -0.5f, 0.0f}, {0, 0, 1, 1}, {1, 1}},
+    Vertex{{-0.5f, -0.5f, 0.0f}, {1, 1, 0, 1}, {0, 1}},
 
 };
 
@@ -160,14 +161,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_ClaimWindowForGPUDevice(device, window);
 
     SDL_GPUShader *vertexShader =
-        LoadShader(device, "PositionTexturePerspective.vert", 0, 1, 0, 0);
+        LoadShader(device, "PositionColorTexturePerspective.vert", 0, 1, 0, 0);
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(");
         return SDL_APP_FAILURE;
     }
 
     SDL_GPUShader *fragmentShader =
-        LoadShader(device, "TexturedQuad.frag", 1, 0, 0, 0);
+        LoadShader(device, "TextureColor.frag", 1, 0, 0, 0);
     // SDL_GPUShader *fragmentShader =
     //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
@@ -201,7 +202,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     vertexBufferDescriptions[0].pitch =
         sizeof(Vertex); // how many bytes to jump after each cycle
 
-    SDL_GPUVertexAttribute vertexAttributes[2];
+    SDL_GPUVertexAttribute vertexAttributes[3];
     // location, buffer_slot, format, offset
     // location: float3 Position in Input in PositionColor.vert
     // buffer_slot: 0 for Input
@@ -210,13 +211,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     vertexAttributes[0] =
         SDL_GPUVertexAttribute{0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
                                offsetof(Vertex, Vertex::position)};
-    vertexAttributes[1] = SDL_GPUVertexAttribute{
-        1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(Vertex, Vertex::uv)};
+    vertexAttributes[1] =
+        SDL_GPUVertexAttribute{1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
+                               offsetof(Vertex, Vertex::color)};
+    vertexAttributes[2] = SDL_GPUVertexAttribute{
+        2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(Vertex, Vertex::uv)};
 
     SDL_GPUVertexInputState vertexInputState{};
     vertexInputState.num_vertex_buffers = 1;
     vertexInputState.vertex_buffer_descriptions = vertexBufferDescriptions;
-    vertexInputState.num_vertex_attributes = 2;
+    vertexInputState.num_vertex_attributes = SDL_arraysize(vertexAttributes);
     vertexInputState.vertex_attributes = vertexAttributes;
 
     // MAKE PIPELINE
@@ -303,8 +307,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         imageDataSurface->w * imageDataSurface->h * 4; // 4 bytes per pixel
     SDL_GPUTransferBuffer *textureTransferBuffer =
         SDL_CreateGPUTransferBuffer(device, &textureTransferBufferCreateInfo);
-    Uint8 *textureTransferData =
-        static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, textureTransferBuffer, false));
+    Uint8 *textureTransferData = static_cast<Uint8 *>(
+        SDL_MapGPUTransferBuffer(device, textureTransferBuffer, false));
     SDL_memcpy(textureTransferData, imageDataSurface->pixels,
                textureTransferBufferCreateInfo.size);
     SDL_UnmapGPUTransferBuffer(device, textureTransferBuffer);
@@ -322,7 +326,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_GPUBufferRegion bufferRegion{};
     bufferRegion.buffer = vertexBuffer;
     bufferRegion.size = vertexBufferCreateInfo.size;
-    bufferRegion.offset = 0; 
+    bufferRegion.offset = 0;
     SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
                           false);
 
