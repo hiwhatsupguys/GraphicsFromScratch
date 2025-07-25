@@ -4,3 +4,12 @@
 [submodule "vendored/glm"]
 	path = vendored/glm
 	url = https://github.com/g-truc/glm
+[submodule "vendored/--recurse-submodules"]
+	path = vendored/--recurse-submodules
+	url = https://github.com/ocornut/imgui/
+[submodule "vendored/imgui"]
+	path = vendored/imgui
+	url = https://github.com/ocornut/imgui/
+[submodule "vendored/SDL_image"]
+	path = vendored/SDL_image
+	url = https://github.com/libsdl-org/SDL_image
