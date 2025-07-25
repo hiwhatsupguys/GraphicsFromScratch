@@ -129,7 +129,7 @@ struct Vertex {
     glm::vec2 uv;
 };
 
-SDL_FColor white = { 1,1,1,1 };
+SDL_FColor white = {1, 1, 1, 1};
 
 // rect
 Vertex vertices[4] = {
@@ -142,6 +142,13 @@ Vertex vertices[4] = {
 };
 
 Uint16 indices[6] = {0, 1, 2, 0, 2, 3};
+
+glm::vec3 cubePositions[] = {
+    glm::vec3(0.0f, 0.0f, 0.0f),    glm::vec3(2.0f, 5.0f, -15.0f),
+    glm::vec3(-1.5f, -2.2f, -2.5f), glm::vec3(-3.8f, -2.0f, -12.3f),
+    glm::vec3(2.4f, -0.4f, -3.5f),  glm::vec3(-1.7f, 3.0f, -7.5f),
+    glm::vec3(1.3f, -2.0f, -2.5f),  glm::vec3(1.5f, 2.0f, -2.5f),
+    glm::vec3(1.5f, 0.2f, -1.5f),   glm::vec3(-1.3f, 1.0f, -1.5f)};
 
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
@@ -463,25 +470,30 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     float aspectRatio = widthf / heightf;
 
-    // rotation matrix
-    matrixUniform.model =
-        glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 1.0f, 0.0f));
-
+    matrixUniform.projection =
+        glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
     matrixUniform.view =
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
 
-    matrixUniform.projection =
-        glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
-
     timeUniform.time = SDL_GetTicksNS() / 1e9f;
 
-    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &timeUniform,
-                                   sizeof(timeUniform));
-    SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
-                                   sizeof(matrixUniform));
+    for (int i = 0; i < 10; i++) {
+        // rotation matrix
+        matrixUniform.model = glm::mat4(1.0f);
+        matrixUniform.model = glm::translate(matrixUniform.model, cubePositions[i]);
+        matrixUniform.model = glm::translate(matrixUniform.model, glm::vec3(cos(timeUniform.time + i * (SDL_PI_F / 10)), sin(timeUniform.time + i * (SDL_PI_F / 10)), 0.0f));
+        matrixUniform.model =
+            glm::rotate(matrixUniform.model, rotation, glm::vec3(1.0f, 1.0f, 0.0f));
 
-    SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0, 0,
-                                 0);
+
+        SDL_PushGPUFragmentUniformData(commandBuffer, 0, &timeUniform,
+                                       sizeof(timeUniform));
+        SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
+                                     sizeof(matrixUniform));
+
+        SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0,
+                                     0, 0);
+    }
 
     // END RENDER PASS
 
