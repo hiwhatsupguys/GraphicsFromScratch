@@ -25,8 +25,6 @@ SDL_GPUBuffer *indexBuffer;
 // specifies which shaders to use, how many buffers, vertex inputs, color
 // blending
 SDL_GPUGraphicsPipeline *fillPipeline;
-SDL_GPUTexture *texture;
-SDL_GPUSampler *sampler;
 
 Uint64 currentTime;
 Uint64 previousTime;
@@ -143,13 +141,6 @@ Vertex vertices[4] = {
 
 Uint16 indices[6] = {0, 1, 2, 0, 2, 3};
 
-glm::vec3 cubePositions[] = {
-    glm::vec3(0.0f, 0.0f, 0.0f),    glm::vec3(2.0f, 5.0f, -15.0f),
-    glm::vec3(-1.5f, -2.2f, -2.5f), glm::vec3(-3.8f, -2.0f, -12.3f),
-    glm::vec3(2.4f, -0.4f, -3.5f),  glm::vec3(-1.7f, 3.0f, -7.5f),
-    glm::vec3(1.3f, -2.0f, -2.5f),  glm::vec3(1.5f, 2.0f, -2.5f),
-    glm::vec3(1.5f, 0.2f, -1.5f),   glm::vec3(-1.3f, 1.0f, -1.5f)};
-
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     /* Create the window */
@@ -175,26 +166,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_ClaimWindowForGPUDevice(device, window);
 
     SDL_GPUShader *vertexShader =
-        LoadShader(device, "PositionColorTexturePerspective.vert", 0, 1, 0, 0);
+        LoadShader(device, "PositionColorPerspective.vert", 0, 1, 0, 0);
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(");
         return SDL_APP_FAILURE;
     }
 
     SDL_GPUShader *fragmentShader =
-        LoadShader(device, "TextureColor.frag", 1, 1, 0, 0);
-    // SDL_GPUShader *fragmentShader =
-    //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
+        LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(");
-        return SDL_APP_FAILURE;
-    }
-
-    SDL_Surface *imageDataSurface = SDL_LoadBMP("Content/Images/ravioli.bmp");
-    imageDataSurface =
-        SDL_ConvertSurface(imageDataSurface, SDL_PIXELFORMAT_ABGR8888);
-    if (!imageDataSurface) {
-        SDL_Log("image load failed ;(");
         return SDL_APP_FAILURE;
     }
 
@@ -256,16 +237,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_ReleaseGPUShader(device, vertexShader);
     SDL_ReleaseGPUShader(device, fragmentShader);
 
-    // LinearClamp
-    SDL_GPUSamplerCreateInfo samplerCreateInfo{};
-    samplerCreateInfo.min_filter = SDL_GPU_FILTER_LINEAR;
-    samplerCreateInfo.mag_filter = SDL_GPU_FILTER_LINEAR;
-    samplerCreateInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
-    samplerCreateInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    samplerCreateInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    samplerCreateInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    sampler = SDL_CreateGPUSampler(device, &samplerCreateInfo);
-
     SDL_GPUBufferCreateInfo vertexBufferCreateInfo{};
     vertexBufferCreateInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
     vertexBufferCreateInfo.size =
@@ -278,17 +249,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     indexBufferCreateInfo.size = sizeof(indices);
     indexBuffer = SDL_CreateGPUBuffer(device, &indexBufferCreateInfo);
     SDL_SetGPUBufferName(device, indexBuffer, "Index Buffer");
-
-    SDL_GPUTextureCreateInfo textureCreateInfo{};
-    textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    textureCreateInfo.width = imageDataSurface->w;
-    textureCreateInfo.height = imageDataSurface->h;
-    textureCreateInfo.layer_count_or_depth = 1;
-    textureCreateInfo.num_levels = 1;
-    textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    texture = SDL_CreateGPUTexture(device, &textureCreateInfo);
-    SDL_SetGPUTextureName(device, texture, "Ravioli Texture");
 
     // we have to use a transfer buffer to upload triangle data into the vertex
     // buffer
@@ -313,19 +273,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_memcpy(transferDataIndicesPtr, indices, indexBufferCreateInfo.size);
 
     SDL_UnmapGPUTransferBuffer(device, transferBuffer);
-
-    // transfer texture
-    SDL_GPUTransferBufferCreateInfo textureTransferBufferCreateInfo{};
-    textureTransferBufferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    textureTransferBufferCreateInfo.size =
-        imageDataSurface->w * imageDataSurface->h * 4; // 4 bytes per pixel
-    SDL_GPUTransferBuffer *textureTransferBuffer =
-        SDL_CreateGPUTransferBuffer(device, &textureTransferBufferCreateInfo);
-    Uint8 *textureTransferData = static_cast<Uint8 *>(
-        SDL_MapGPUTransferBuffer(device, textureTransferBuffer, false));
-    SDL_memcpy(textureTransferData, imageDataSurface->pixels,
-               textureTransferBufferCreateInfo.size);
-    SDL_UnmapGPUTransferBuffer(device, textureTransferBuffer);
 
     // upload transfer data to vertex buffer
     SDL_GPUCommandBuffer *uploadCommandBuffer =
@@ -352,24 +299,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
                           false);
 
-    SDL_GPUTextureTransferInfo textureTransferInfo{};
-    textureTransferInfo.transfer_buffer = textureTransferBuffer;
-    textureTransferInfo.offset = 0;
-    SDL_GPUTextureRegion textureRegion{};
-    textureRegion.texture = texture;
-    textureRegion.w = imageDataSurface->w;
-    textureRegion.h = imageDataSurface->h;
-    textureRegion.d = 1;
-    SDL_UploadToGPUTexture(copyPass, &textureTransferInfo, &textureRegion,
-                           false);
-
     SDL_EndGPUCopyPass(copyPass);
 
     SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
 
-    SDL_DestroySurface(imageDataSurface);
     SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
-    SDL_ReleaseGPUTransferBuffer(device, textureTransferBuffer);
 
     currentTime = SDL_GetTicksNS();
     previousTime = currentTime;
@@ -463,11 +397,6 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding,
                            SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
-    SDL_GPUTextureSamplerBinding textureSamplerBinding{};
-    textureSamplerBinding.texture = texture;
-    textureSamplerBinding.sampler = sampler;
-    SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
-
     float aspectRatio = widthf / heightf;
 
     matrixUniform.projection =
@@ -475,25 +404,20 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     matrixUniform.view =
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
 
-    timeUniform.time = SDL_GetTicksNS() / 1e9f;
+    float time = SDL_GetTicksNS() / 1e9f;
 
-    for (int i = 0; i < 10; i++) {
-        // rotation matrix
-        matrixUniform.model = glm::mat4(1.0f);
-        matrixUniform.model = glm::translate(matrixUniform.model, cubePositions[i]);
-        matrixUniform.model = glm::translate(matrixUniform.model, glm::vec3(cos(timeUniform.time + i * (SDL_PI_F / 10)), sin(timeUniform.time + i * (SDL_PI_F / 10)), 0.0f));
-        matrixUniform.model =
-            glm::rotate(matrixUniform.model, rotation, glm::vec3(1.0f, 1.0f, 0.0f));
+    // rotation matrix
+    matrixUniform.model = glm::mat4(1.0f);
+    matrixUniform.model = glm::translate(
+        matrixUniform.model, glm::vec3(0.5 * cos(time), 0.5 * sin(time), 0.0f));
+    matrixUniform.model =
+        glm::rotate(matrixUniform.model, rotation, glm::vec3(1.0f, 0.3f, 0.5f));
 
+    SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
+                                 sizeof(matrixUniform));
 
-        SDL_PushGPUFragmentUniformData(commandBuffer, 0, &timeUniform,
-                                       sizeof(timeUniform));
-        SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
-                                     sizeof(matrixUniform));
-
-        SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0,
-                                     0, 0);
-    }
+    SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0, 0,
+                                 0);
 
     // END RENDER PASS
 
@@ -509,9 +433,6 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     SDL_ReleaseGPUBuffer(device, vertexBuffer);
     SDL_ReleaseGPUBuffer(device, indexBuffer);
-
-    SDL_ReleaseGPUTexture(device, texture);
-    SDL_ReleaseGPUSampler(device, sampler);
 
     SDL_ReleaseGPUGraphicsPipeline(device, fillPipeline);
 
