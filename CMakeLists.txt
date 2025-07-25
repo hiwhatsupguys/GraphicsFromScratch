@@ -26,6 +26,14 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
 add_subdirectory(vendored/glm EXCLUDE_FROM_ALL)
 
+# SDL_image (used for loading various image formats)
+set(SDLIMAGE_VENDORED ON)
+set(SDLIMAGE_AVIF OFF)	# disable formats we don't use to make the build faster and smaller.
+set(SDLIMAGE_BMP OFF)
+set(SDLIMAGE_JPEG OFF)
+set(SDLIMAGE_WEBP OFF)
+add_subdirectory(vendored/SDL_image EXCLUDE_FROM_ALL)
+
 # Include sub-projects.
 add_subdirectory ("GraphicsFromScratch")
 
@@ -42,5 +50,6 @@ target_link_libraries(${EXECUTABLE_NAME} PUBLIC
 #	SDL3_image::SDL3_image	# remove if you are not using SDL_image
     SDL3::SDL3              # If using satelite libraries, SDL must be the last item in the list. 
     glm::glm-header-only
+    SDL3_image::SDL3_image
 )
 
