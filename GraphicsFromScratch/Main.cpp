@@ -116,7 +116,12 @@ struct MatrixUniformBuffer {
     glm::mat4 projection;
 };
 
+struct TimeUniformBuffer {
+    float time;
+};
+
 static MatrixUniformBuffer matrixUniform;
+static TimeUniformBuffer timeUniform;
 
 struct Vertex {
     glm::vec3 position;
@@ -124,13 +129,15 @@ struct Vertex {
     glm::vec2 uv;
 };
 
+SDL_FColor white = { 1,1,1,1 };
+
 // rect
 Vertex vertices[4] = {
 
-    Vertex{{-0.5f, 0.5f, 0.0f}, {1, 0, 0, 1}, {0, 0}},
-    Vertex{{0.5f, 0.5f, 0.0f}, {0, 1, 0, 1}, {1, 0}},
-    Vertex{{0.5f, -0.5f, 0.0f}, {0, 0, 1, 1}, {1, 1}},
-    Vertex{{-0.5f, -0.5f, 0.0f}, {1, 1, 0, 1}, {0, 1}},
+    Vertex{{-0.5f, 0.5f, 0.0f}, white, {0, 0}},
+    Vertex{{0.5f, 0.5f, 0.0f}, white, {1, 0}},
+    Vertex{{0.5f, -0.5f, 0.0f}, white, {1, 1}},
+    Vertex{{-0.5f, -0.5f, 0.0f}, white, {0, 1}},
 
 };
 
@@ -168,7 +175,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
 
     SDL_GPUShader *fragmentShader =
-        LoadShader(device, "TextureColor.frag", 1, 0, 0, 0);
+        LoadShader(device, "TextureColor.frag", 1, 1, 0, 0);
     // SDL_GPUShader *fragmentShader =
     //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
@@ -461,12 +468,16 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 1.0f, 0.0f));
 
     matrixUniform.view =
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
 
     matrixUniform.projection =
         glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
 
-    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &matrixUniform,
+    timeUniform.time = SDL_GetTicksNS() / 1e9f;
+
+    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &timeUniform,
+                                   sizeof(timeUniform));
+    SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
                                    sizeof(matrixUniform));
 
     SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0, 0,
