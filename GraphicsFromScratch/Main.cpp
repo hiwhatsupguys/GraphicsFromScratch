@@ -127,9 +127,9 @@ struct Vertex {
 Vertex vertices[4] = {
 
     Vertex{{-0.5f, 0.5f, 0.0f}, {0, 0}},
-    Vertex{{0.5f, 0.5f, 0.0f}, {4, 0}},
-    Vertex{{0.5f, -0.5f, 0.0f}, {4, 4}},
-    Vertex{{-0.5f, -0.5f, 0.0f}, {0, 4}},
+    Vertex{{0.5f, 0.5f, 0.0f}, {1, 0}},
+    Vertex{{0.5f, -0.5f, 0.0f}, {1, 1}},
+    Vertex{{-0.5f, -0.5f, 0.0f}, {0, 1}},
 
 };
 
@@ -322,7 +322,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_GPUBufferRegion bufferRegion{};
     bufferRegion.buffer = vertexBuffer;
     bufferRegion.size = vertexBufferCreateInfo.size;
-    bufferRegion.offset = 0; // maybe change
+    bufferRegion.offset = 0; 
     SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
                           false);
 
