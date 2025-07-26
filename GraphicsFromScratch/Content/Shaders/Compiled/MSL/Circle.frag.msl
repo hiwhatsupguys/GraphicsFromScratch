@@ -14,10 +14,10 @@ struct main0_in
     float4 in_var_TEXCOORD1 [[user(locn1)]];
 };
 
-fragment main0_out main0(main0_in in [[stage_in]], texture2d<float> Texture [[texture(0)]], sampler Sampler [[sampler(0)]])
+fragment main0_out main0(main0_in in [[stage_in]])
 {
     main0_out out = {};
-    out.out_var_SV_Target0 = in.in_var_TEXCOORD1 * Texture.sample(Sampler, in.in_var_TEXCOORD0);
+    out.out_var_SV_Target0 = float4(in.in_var_TEXCOORD1.xyz, smoothstep(0.0, 0.004999999888241291046142578125, 0.5 - distance(in.in_var_TEXCOORD0, float2(0.5))));
     return out;
 }
 

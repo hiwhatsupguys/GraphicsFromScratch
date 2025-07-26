@@ -114,12 +114,9 @@ struct MatrixUniformBuffer {
     glm::mat4 projection;
 };
 
-struct TimeUniformBuffer {
-    float time;
-};
+constexpr float ROUNDED_RECT_RADIUS = 0.2f;
 
 static MatrixUniformBuffer matrixUniform;
-static TimeUniformBuffer timeUniform;
 
 struct Vertex {
     glm::vec3 position;
@@ -127,15 +124,15 @@ struct Vertex {
     glm::vec2 uv;
 };
 
-SDL_FColor white = {1, 1, 1, 1};
+SDL_FColor WHITE = {1, 1, 1, 1};
 
 // rect
 Vertex vertices[4] = {
 
-    Vertex{{-0.5f, 0.5f, 0.0f}, white, {0, 0}},
-    Vertex{{0.5f, 0.5f, 0.0f}, white, {1, 0}},
-    Vertex{{0.5f, -0.5f, 0.0f}, white, {1, 1}},
-    Vertex{{-0.5f, -0.5f, 0.0f}, white, {0, 1}},
+    Vertex{{-0.5f, 0.5f, 0.0f}, {1, 0, 0, 1}, {0, 0}},
+    Vertex{{0.5f, 0.5f, 0.0f}, {0, 1, 0, 1}, {1, 0}},
+    Vertex{{0.5f, -0.5f, 0.0f}, {0, 0, 1, 1}, {1, 1}},
+    Vertex{{-0.5f, -0.5f, 0.0f}, {1, 1, 0, 1}, {0, 1}},
 
 };
 
@@ -166,21 +163,33 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_ClaimWindowForGPUDevice(device, window);
 
     SDL_GPUShader *vertexShader =
-        LoadShader(device, "PositionColorPerspective.vert", 0, 1, 0, 0);
+        LoadShader(device, "Circle.vert", 0, 1, 0, 0);
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(");
         return SDL_APP_FAILURE;
     }
 
     SDL_GPUShader *fragmentShader =
-        LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
+        LoadShader(device, "RoundedRectangle.frag", 0, 1, 0, 0);
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(");
         return SDL_APP_FAILURE;
     }
 
+    SDL_GPUColorTargetBlendState blendState{};
+    blendState.enable_color_write_mask = true;
+    blendState.color_write_mask = SDL_GPU_COLORCOMPONENT_R | SDL_GPU_COLORCOMPONENT_G | SDL_GPU_COLORCOMPONENT_B | SDL_GPU_COLORCOMPONENT_A;
+    blendState.enable_blend = true;
+    blendState.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+    blendState.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    blendState.color_blend_op = SDL_GPU_BLENDOP_ADD;
+    blendState.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+    blendState.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+    blendState.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+
     SDL_GPUColorTargetDescription colorTargetDescriptions[1];
     colorTargetDescriptions[0] = {};
+    colorTargetDescriptions[0].blend_state = blendState;
     colorTargetDescriptions[0].format =
         SDL_GetGPUSwapchainTextureFormat(device, window);
 
@@ -409,12 +418,15 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     // rotation matrix
     matrixUniform.model = glm::mat4(1.0f);
     matrixUniform.model = glm::translate(
-        matrixUniform.model, glm::vec3(0.5 * cos(time), 0.5 * sin(time), 0.0f));
+        matrixUniform.model, glm::vec3(0.25 * cos(time), 0.25 * sin(time), 0.0f));
     matrixUniform.model =
         glm::rotate(matrixUniform.model, rotation, glm::vec3(1.0f, 0.3f, 0.5f));
 
     SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
                                  sizeof(matrixUniform));
+
+    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &ROUNDED_RECT_RADIUS, sizeof(ROUNDED_RECT_RADIUS));
+
 
     SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0, 0,
                                  0);
