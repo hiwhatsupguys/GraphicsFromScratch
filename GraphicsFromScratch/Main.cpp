@@ -24,6 +24,7 @@
 #include <vector>
 
 SDL_Window *window;
+    int windowWidth, windowHeight;
 SDL_GPUDevice *device;
 SDL_GPUBuffer *vertexBuffer;
 SDL_GPUBuffer *indexBuffer;
@@ -31,6 +32,7 @@ SDL_GPUBuffer *indexBuffer;
 // blending
 SDL_GPUGraphicsPipeline *fillPipeline;
 SDL_GPUTexture *texture;
+SDL_GPUTexture *depthTexture;
 SDL_GPUSampler *sampler;
 
 Uint64 currentTime;
@@ -211,8 +213,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     colorTargetDescriptions[0].format =
         SDL_GetGPUSwapchainTextureFormat(device, window);
 
+
+    constexpr SDL_GPUTextureFormat DEPTH_TEXTURE_FORMAT = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+
     SDL_GPUGraphicsPipelineTargetInfo targetInfo{};
     targetInfo.num_color_targets = 1;
+    targetInfo.has_depth_stencil_target = true;
+    targetInfo.depth_stencil_format = DEPTH_TEXTURE_FORMAT;
     targetInfo.color_target_descriptions = colorTargetDescriptions;
 
     // describe the vertex buffers
@@ -245,11 +252,18 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     vertexInputState.num_vertex_attributes = SDL_arraysize(vertexAttributes);
     vertexInputState.vertex_attributes = vertexAttributes;
 
+
+    SDL_GPUDepthStencilState depthStencil{};
+    depthStencil.enable_depth_test = true;
+    depthStencil.enable_depth_write = true;
+    depthStencil.compare_op = SDL_GPU_COMPAREOP_LESS;
+
     // MAKE PIPELINE
     SDL_GPUGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.vertex_shader = vertexShader;
     pipelineInfo.fragment_shader = fragmentShader;
     pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    pipelineInfo.depth_stencil_state = depthStencil;
     // pipelineInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     pipelineInfo.target_info = targetInfo;
     pipelineInfo.vertex_input_state = vertexInputState;
@@ -297,7 +311,21 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     textureCreateInfo.num_levels = 1;
     textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
     texture = SDL_CreateGPUTexture(device, &textureCreateInfo);
-    SDL_SetGPUTextureName(device, texture, "Ravioli Texture");
+    SDL_SetGPUTextureName(device, texture, "Colormap Texture");
+
+
+    SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
+    depthTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+    depthTextureCreateInfo.format = DEPTH_TEXTURE_FORMAT;
+    // WILL CAUSE PROBLEMS DUE TO RESIZING
+    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+    depthTextureCreateInfo.width = windowWidth;
+    depthTextureCreateInfo.height = windowHeight;
+    depthTextureCreateInfo.layer_count_or_depth = 1;
+    depthTextureCreateInfo.num_levels = 1;
+    depthTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+    depthTexture = SDL_CreateGPUTexture(device, &depthTextureCreateInfo);
+    SDL_SetGPUTextureName(device, depthTexture, "Depth Texture");
 
     // we have to use a transfer buffer to upload triangle data into the vertex
     // buffer
@@ -407,7 +435,6 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     previousTime = currentTime;
 
-    int windowWidth, windowHeight;
     SDL_GetWindowSize(window, &windowWidth, &windowHeight);
 
     // list of commands to send to the gpu for fast execution
@@ -451,12 +478,18 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     colorTargetInfo.texture = swapchainTexture;
 
+    SDL_GPUDepthStencilTargetInfo depthStencilTargetInfo{};
+    depthStencilTargetInfo.texture = depthTexture;
+    depthStencilTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+    depthStencilTargetInfo.clear_depth = 1;
+    depthStencilTargetInfo.store_op = SDL_GPU_STOREOP_DONT_CARE;
+
     // BEGIN RENDER PASS
 
     // color_target_infos: array of render targets, lets you render multiple at
     // the same time num_color_targets: size of array
     SDL_GPURenderPass *renderPass =
-        SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, nullptr);
+        SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, &depthStencilTargetInfo);
 
     // bind the graphics pipeline
     SDL_BindGPUGraphicsPipeline(renderPass, fillPipeline);
@@ -512,6 +545,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     SDL_ReleaseGPUBuffer(device, indexBuffer);
 
     SDL_ReleaseGPUTexture(device, texture);
+    SDL_ReleaseGPUTexture(device, depthTexture);
     SDL_ReleaseGPUSampler(device, sampler);
 
     SDL_ReleaseGPUGraphicsPipeline(device, fillPipeline);
