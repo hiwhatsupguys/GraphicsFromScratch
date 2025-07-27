@@ -15,8 +15,13 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
 
+#include "ObjData.h"
+#include "Vertex.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+#include <string>
+#include <vector>
 
 SDL_Window *window;
 SDL_GPUDevice *device;
@@ -33,6 +38,45 @@ Uint64 previousTime;
 float deltaTime;
 
 float rotation;
+
+ObjData objData;
+const char *MODEL_PATH = "Content/Meshes/sedan-sports.obj";
+
+struct MatrixUniformBuffer {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 projection;
+};
+
+static MatrixUniformBuffer matrixUniform;
+
+constexpr glm::vec4 WHITE{1, 1, 1, 1};
+
+std::vector<Vertex> vertices;
+std::vector<Uint32> indices;
+
+//// rect
+// std::vector<Vertex> vertices{
+//
+//     Vertex{{-0.5f, 0.5f, 0.0f}, WHITE, {0, 0}},
+//     Vertex{{0.5f, 0.5f, 0.0f}, WHITE, {1, 0}},
+//     Vertex{{0.5f, -0.5f, 0.0f}, WHITE, {1, 1}},
+//     Vertex{{-0.5f, -0.5f, 0.0f}, WHITE, {0, 1}},
+// };
+//
+// std::vector<Uint32> indices{0, 1, 2, 0, 2, 3};
+
+//// rect
+// Vertex vertices[4] = {
+//
+//     Vertex{{-0.5f, 0.5f, 0.0f}, WHITE, {0, 0}},
+//     Vertex{{0.5f, 0.5f, 0.0f}, WHITE, {1, 0}},
+//     Vertex{{0.5f, -0.5f, 0.0f}, WHITE, {1, 1}},
+//     Vertex{{-0.5f, -0.5f, 0.0f}, WHITE, {0, 1}},
+//
+// };
+//
+// Uint32 indices[6] = {0, 1, 2, 0, 2, 3};
 
 SDL_GPUShader *LoadShader(SDL_GPUDevice *device, const char *shaderFilename,
                           const Uint32 samplerCount,
@@ -110,46 +154,6 @@ SDL_GPUShader *LoadShader(SDL_GPUDevice *device, const char *shaderFilename,
     return shader;
 }
 
-struct MatrixUniformBuffer {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 projection;
-};
-
-struct TimeUniformBuffer {
-    float time;
-};
-
-static MatrixUniformBuffer matrixUniform;
-static TimeUniformBuffer timeUniform;
-
-struct Vertex {
-    glm::vec3 position;
-    SDL_FColor color;
-    glm::vec2 uv;
-};
-
-SDL_FColor white = {1, 1, 1, 1};
-
-// rect
-Vertex vertices[4] = {
-
-    Vertex{{-0.5f, 0.5f, 0.0f}, white, {0, 0}},
-    Vertex{{0.5f, 0.5f, 0.0f}, white, {1, 0}},
-    Vertex{{0.5f, -0.5f, 0.0f}, white, {1, 1}},
-    Vertex{{-0.5f, -0.5f, 0.0f}, white, {0, 1}},
-
-};
-
-Uint16 indices[6] = {0, 1, 2, 0, 2, 3};
-
-glm::vec3 cubePositions[] = {
-    glm::vec3(0.0f, 0.0f, 0.0f),    glm::vec3(2.0f, 5.0f, -15.0f),
-    glm::vec3(-1.5f, -2.2f, -2.5f), glm::vec3(-3.8f, -2.0f, -12.3f),
-    glm::vec3(2.4f, -0.4f, -3.5f),  glm::vec3(-1.7f, 3.0f, -7.5f),
-    glm::vec3(1.3f, -2.0f, -2.5f),  glm::vec3(1.5f, 2.0f, -2.5f),
-    glm::vec3(1.5f, 0.2f, -1.5f),   glm::vec3(-1.3f, 1.0f, -1.5f)};
-
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     /* Create the window */
@@ -174,6 +178,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 
     SDL_ClaimWindowForGPUDevice(device, window);
 
+    objData.loadModel(MODEL_PATH);
+    vertices = objData.vertices;
+    indices = objData.indices;
+
     SDL_GPUShader *vertexShader =
         LoadShader(device, "PositionColorTexturePerspective.vert", 0, 1, 0, 0);
     if (!vertexShader) {
@@ -182,7 +190,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
 
     SDL_GPUShader *fragmentShader =
-        LoadShader(device, "TextureColor.frag", 1, 1, 0, 0);
+        LoadShader(device, "TexturedQuad.frag", 1, 0, 0, 0);
     // SDL_GPUShader *fragmentShader =
     //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
@@ -190,7 +198,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         return SDL_APP_FAILURE;
     }
 
-    SDL_Surface *imageDataSurface = SDL_LoadBMP("Content/Images/ravioli.bmp");
+    SDL_Surface *imageDataSurface = IMG_Load("Content/Meshes/colormap.png");
     imageDataSurface =
         SDL_ConvertSurface(imageDataSurface, SDL_PIXELFORMAT_ABGR8888);
     if (!imageDataSurface) {
@@ -269,13 +277,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_GPUBufferCreateInfo vertexBufferCreateInfo{};
     vertexBufferCreateInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
     vertexBufferCreateInfo.size =
-        sizeof(vertices); // size of the whole vertex buffer
+        vertices.size() *
+        sizeof(vertices[0]); // size of the whole vertex buffer
     vertexBuffer = SDL_CreateGPUBuffer(device, &vertexBufferCreateInfo);
     SDL_SetGPUBufferName(device, vertexBuffer, "Vertex Buffer");
 
     SDL_GPUBufferCreateInfo indexBufferCreateInfo{};
     indexBufferCreateInfo.usage = SDL_GPU_BUFFERUSAGE_INDEX;
-    indexBufferCreateInfo.size = sizeof(indices);
+    indexBufferCreateInfo.size = indices.size() * sizeof(indices[0]);
     indexBuffer = SDL_CreateGPUBuffer(device, &indexBufferCreateInfo);
     SDL_SetGPUBufferName(device, indexBuffer, "Index Buffer");
 
@@ -305,12 +314,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     void *transferData =
         (void *)SDL_MapGPUTransferBuffer(device, transferBuffer, false);
 
-    SDL_memcpy(transferData, vertices, vertexBufferCreateInfo.size);
+    SDL_memcpy(transferData, vertices.data(), vertexBufferCreateInfo.size);
     // copy index buffer to next section
     // dest, source
     void *transferDataIndicesPtr = static_cast<void *>(
         static_cast<char *>(transferData) + vertexBufferCreateInfo.size);
-    SDL_memcpy(transferDataIndicesPtr, indices, indexBufferCreateInfo.size);
+    SDL_memcpy(transferDataIndicesPtr, indices.data(),
+               indexBufferCreateInfo.size);
 
     SDL_UnmapGPUTransferBuffer(device, transferBuffer);
 
@@ -461,7 +471,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     indexBufferBinding.buffer = indexBuffer;
     indexBufferBinding.offset = 0;
     SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding,
-                           SDL_GPU_INDEXELEMENTSIZE_16BIT);
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
     SDL_GPUTextureSamplerBinding textureSamplerBinding{};
     textureSamplerBinding.texture = texture;
@@ -469,31 +479,22 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
 
     float aspectRatio = widthf / heightf;
+    float time = SDL_GetTicksNS() / 1e9f;
 
     matrixUniform.projection =
-        glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
+        glm::perspective(glm::radians(70.0f), aspectRatio, 0.1f, 100.0f);
     matrixUniform.view =
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -3.0f));
 
-    timeUniform.time = SDL_GetTicksNS() / 1e9f;
+    // rotation matrix
+    matrixUniform.model = glm::mat4(1.0f);
+    matrixUniform.model =
+        glm::rotate(matrixUniform.model, rotation, glm::vec3(0.0f, 1.0f, 0.0f));
 
-    for (int i = 0; i < 10; i++) {
-        // rotation matrix
-        matrixUniform.model = glm::mat4(1.0f);
-        matrixUniform.model = glm::translate(matrixUniform.model, cubePositions[i]);
-        matrixUniform.model = glm::translate(matrixUniform.model, glm::vec3(cos(timeUniform.time + i * (SDL_PI_F / 10)), sin(timeUniform.time + i * (SDL_PI_F / 10)), 0.0f));
-        matrixUniform.model =
-            glm::rotate(matrixUniform.model, rotation, glm::vec3(1.0f, 1.0f, 0.0f));
+    SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
+                                 sizeof(matrixUniform));
 
-
-        SDL_PushGPUFragmentUniformData(commandBuffer, 0, &timeUniform,
-                                       sizeof(timeUniform));
-        SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
-                                     sizeof(matrixUniform));
-
-        SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0,
-                                     0, 0);
-    }
+    SDL_DrawGPUIndexedPrimitives(renderPass, indices.size(), 1, 0, 0, 0);
 
     // END RENDER PASS
 

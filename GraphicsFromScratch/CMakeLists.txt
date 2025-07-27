@@ -2,7 +2,13 @@
 # project specific logic here.
 #
 
-add_executable(${EXECUTABLE_NAME} "Main.cpp"  )
+# add every single .h and .cpp file in each subdirectory
+file(GLOB_RECURSE EXECUTABLES
+     "*.h"
+     "*.cpp"
+)
+
+add_executable(${EXECUTABLE_NAME} ${EXECUTABLES})
 
 # copy shaders to build directory
 # add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD

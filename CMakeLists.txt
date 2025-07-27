@@ -25,6 +25,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 # This assumes the SDL source is available in vendored/SDL
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
 add_subdirectory(vendored/glm EXCLUDE_FROM_ALL)
+add_subdirectory(vendored/tinyobjloader EXCLUDE_FROM_ALL)
 
 # SDL_image (used for loading various image formats)
 set(SDLIMAGE_VENDORED ON)
@@ -51,5 +52,6 @@ target_link_libraries(${EXECUTABLE_NAME} PUBLIC
     SDL3::SDL3              # If using satelite libraries, SDL must be the last item in the list. 
     glm::glm-header-only
     SDL3_image::SDL3_image
+    tinyobjloader
 )
 
