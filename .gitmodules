@@ -13,3 +13,6 @@
 [submodule "vendored/SDL_image"]
 	path = vendored/SDL_image
 	url = https://github.com/libsdl-org/SDL_image
+[submodule "vendored/tinyobjloader"]
+	path = vendored/tinyobjloader
+	url = https://github.com/tinyobjloader/tinyobjloader
