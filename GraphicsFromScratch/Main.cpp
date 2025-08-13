@@ -28,15 +28,15 @@ int windowWidth, windowHeight;
 float aspectRatio;
 
 SDL_GPUDevice* device;
-SDL_GPUBuffer* vertexBuffer;
-SDL_GPUBuffer* indexBuffer;
 // specifies which shaders to use, how many buffers, vertex inputs, color
 // blending
 SDL_GPUGraphicsPipeline* fillPipeline;
-SDL_GPUTexture* texture;
 SDL_GPUTexture* depthTexture;
 SDL_GPUTextureCreateInfo
 depthTextureCreateInfo{}; // for updating width and height later
+
+constexpr SDL_GPUTextureFormat DEPTH_TEXTURE_FORMAT =
+SDL_GPU_TEXTUREFORMAT_D24_UNORM;
 
 SDL_GPUSampler* sampler;
 
@@ -46,21 +46,26 @@ float deltaTime;
 
 float rotation;
 
-ObjData objData;
 const char* MODEL_PATH = "Content/Meshes/sedan-sports.obj";
+const char* MESH_PATH = "Content/Meshes/colormap.png";
+
+struct Model {
+    SDL_GPUBuffer* vertexBuffer;
+    SDL_GPUBuffer* indexBuffer;
+    Uint32 numIndices;
+    SDL_GPUTexture* colormapTexture;
+
+};
+
+Model model;
 
 struct MatrixUniformBuffer {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 projection;
+    glm::mat4 mvp;
 };
 
 static MatrixUniformBuffer matrixUniform;
 
 constexpr glm::vec4 WHITE{ 1, 1, 1, 1 };
-
-std::vector<Vertex> vertices;
-std::vector<Uint32> indices;
 
 //// rect
 // std::vector<Vertex> vertices{
@@ -85,6 +90,7 @@ std::vector<Uint32> indices;
 //
 // Uint32 indices[6] = {0, 1, 2, 0, 2, 3};
 
+// ripped from SDL_gpu examples
 SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const char* shaderFilename,
     const Uint32 samplerCount,
     const Uint32 uniformBufferCount,
@@ -166,13 +172,7 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const char* shaderFilename,
     return shader;
 }
 
-/* This function runs once at startup. */
-SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
-    /* Create the window */
-    // window = SDL_CreateWindow("Graphics From Scratch", 800, 600,
-    //                           SDL_WINDOW_FULLSCREEN);
-    // SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-    // SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
+void init() {
 
     window = SDL_CreateWindow("Graphics From Scratch", 800, 600,
         SDL_WINDOW_RESIZABLE);
@@ -192,42 +192,31 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_Log("Base path: %s", SDL_GetBasePath());
 
     SDL_ClaimWindowForGPUDevice(device, window);
+}
 
-    objData.loadModel(MODEL_PATH);
-    vertices = objData.vertices;
-    indices = objData.indices;
-
+void setupPipeline() {
+    // KEEP IN MIND THE UNIFORM BUFFER COUNT
     SDL_GPUShader* vertexShader =
         LoadShader(device, "PositionColorTexturePerspective.vert", 0, 1, 0, 0);
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(");
-        return SDL_APP_FAILURE;
+        SDL_Quit();
     }
 
+    // KEEP IN MIND THE UNIFORM BUFFER COUNT
     SDL_GPUShader* fragmentShader =
         LoadShader(device, "TexturedQuad.frag", 1, 0, 0, 0);
     // SDL_GPUShader *fragmentShader =
     //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(");
-        return SDL_APP_FAILURE;
+        SDL_Quit();
     }
-
-    SDL_Surface* imageDataSurface = IMG_Load("Content/Meshes/colormap.png");
-    imageDataSurface =
-        SDL_ConvertSurface(imageDataSurface, SDL_PIXELFORMAT_ABGR8888);
-    if (!imageDataSurface) {
-        SDL_Log("image load failed ;(");
-        return SDL_APP_FAILURE;
-    }
-
     SDL_GPUColorTargetDescription colorTargetDescriptions[1];
     colorTargetDescriptions[0] = {};
     colorTargetDescriptions[0].format =
         SDL_GetGPUSwapchainTextureFormat(device, window);
 
-    constexpr SDL_GPUTextureFormat DEPTH_TEXTURE_FORMAT =
-        SDL_GPU_TEXTUREFORMAT_D24_UNORM;
 
     SDL_GPUGraphicsPipelineTargetInfo targetInfo{};
     targetInfo.num_color_targets = 1;
@@ -284,7 +273,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     if (!fillPipeline) {
         SDL_Log("Failed to create graphics pipeline, error: %s",
             SDL_GetError());
-        return SDL_APP_FAILURE;
+        SDL_Quit();
     }
 
     SDL_ReleaseGPUShader(device, vertexShader);
@@ -299,6 +288,27 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     samplerCreateInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     samplerCreateInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     sampler = SDL_CreateGPUSampler(device, &samplerCreateInfo);
+}
+
+Model loadModel(const char* meshPath, const char* modelPath) {
+    SDL_GPUBuffer* vertexBuffer;
+    SDL_GPUBuffer* indexBuffer;
+    SDL_GPUTexture* colormapTexture;
+
+    ObjData objData;
+    objData.loadModel(modelPath);
+    const std::vector<Vertex>& vertices = objData.vertices;
+    const std::vector<Uint32>& indices = objData.indices;
+
+    SDL_Surface* imageDataSurface = IMG_Load(meshPath);
+    imageDataSurface =
+        SDL_ConvertSurface(imageDataSurface, SDL_PIXELFORMAT_ABGR8888);
+    if (!imageDataSurface) {
+        SDL_Log("image load failed ;(");
+        //return SDL_APP_FAILURE;
+    }
+
+
 
     SDL_GPUBufferCreateInfo vertexBufferCreateInfo{};
     vertexBufferCreateInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
@@ -322,8 +332,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     textureCreateInfo.layer_count_or_depth = 1;
     textureCreateInfo.num_levels = 1;
     textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    texture = SDL_CreateGPUTexture(device, &textureCreateInfo);
-    SDL_SetGPUTextureName(device, texture, "Colormap Texture");
+    colormapTexture = SDL_CreateGPUTexture(device, &textureCreateInfo);
+    SDL_SetGPUTextureName(device, colormapTexture, "Colormap Texture");
 
     // SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
     depthTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -403,7 +413,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     textureTransferInfo.transfer_buffer = textureTransferBuffer;
     textureTransferInfo.offset = 0;
     SDL_GPUTextureRegion textureRegion{};
-    textureRegion.texture = texture;
+    textureRegion.texture = colormapTexture;
     textureRegion.w = imageDataSurface->w;
     textureRegion.h = imageDataSurface->h;
     textureRegion.d = 1;
@@ -417,6 +427,21 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_DestroySurface(imageDataSurface);
     SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
     SDL_ReleaseGPUTransferBuffer(device, textureTransferBuffer);
+
+    return Model{ vertexBuffer, indexBuffer, static_cast<Uint32>(indices.size()), colormapTexture };
+}
+
+/* This function runs once at startup. */
+SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
+    /* Create the window */
+    // window = SDL_CreateWindow("Graphics From Scratch", 800, 600,
+    //                           SDL_WINDOW_FULLSCREEN);
+    // SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+    // SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
+
+    init();
+    setupPipeline();
+    model = loadModel(MESH_PATH, MODEL_PATH);
 
     currentTime = SDL_GetTicksNS();
     previousTime = currentTime;
@@ -535,37 +560,44 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     // DRAW SOMETHING
     SDL_GPUBufferBinding vertexBufferBinding{};
-    vertexBufferBinding.buffer = vertexBuffer;
+    vertexBufferBinding.buffer = model.vertexBuffer;
     vertexBufferBinding.offset = 0;
     SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
 
     SDL_GPUBufferBinding indexBufferBinding{};
-    indexBufferBinding.buffer = indexBuffer;
+    indexBufferBinding.buffer = model.indexBuffer;
     indexBufferBinding.offset = 0;
     SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding,
         SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
     SDL_GPUTextureSamplerBinding textureSamplerBinding{};
-    textureSamplerBinding.texture = texture;
+    textureSamplerBinding.texture = model.colormapTexture;
     textureSamplerBinding.sampler = sampler;
     SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
 
     float time = SDL_GetTicksNS() / 1e9f;
 
-    matrixUniform.projection =
+    // create matrices so the gpu can use them to transform the vertices to go on the screen where they belong
+    glm::mat4 projectionMatrix =
         glm::perspective(glm::radians(70.0f), aspectRatio, 0.1f, 100.0f);
-    matrixUniform.view =
+    glm::mat4 viewMatrix =
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -3.0f));
 
     // rotation matrix
-    matrixUniform.model = glm::mat4(1.0f);
-    matrixUniform.model =
-        glm::rotate(matrixUniform.model, rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 modelMatrix =
+        glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 1.0f, 0.0f));
 
+    // calculate mvp matrix to send to the vertex shader
+    matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
+
+    // push vertex uniform data so the gpu can perform the matrix multiplication
     SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
         sizeof(matrixUniform));
 
-    SDL_DrawGPUIndexedPrimitives(renderPass, indices.size(), 1, 0, 0, 0);
+    // fragment shader uniforms
+    //SDL_PushGPUFragmentUniformData();
+
+    SDL_DrawGPUIndexedPrimitives(renderPass, model.numIndices, 1, 0, 0, 0);
 
     // END RENDER PASS
 
@@ -581,11 +613,11 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     SDL_ReleaseGPUGraphicsPipeline(device, fillPipeline);
 
-    SDL_ReleaseGPUTexture(device, texture);
+    SDL_ReleaseGPUTexture(device, model.colormapTexture);
     SDL_ReleaseGPUTexture(device, depthTexture);
 
-    SDL_ReleaseGPUBuffer(device, vertexBuffer);
-    SDL_ReleaseGPUBuffer(device, indexBuffer);
+    SDL_ReleaseGPUBuffer(device, model.vertexBuffer);
+    SDL_ReleaseGPUBuffer(device, model.indexBuffer);
 
     SDL_ReleaseGPUSampler(device, sampler);
 

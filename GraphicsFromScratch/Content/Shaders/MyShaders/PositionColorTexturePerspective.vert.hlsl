@@ -1,13 +1,7 @@
 
 cbuffer UBO : register(b0, space1)
 {
-     // float4x4 model : packoffset(c0);
-     // float4x4 view : packoffset(c4);
-     // float4x4 projection : packoffset(c8);
-
-      float4x4 model;
-      float4x4 view;
-      float4x4 projection;
+    float4x4 mvp;
 };
 
 struct Input
@@ -30,11 +24,14 @@ Output main(Input input)
     output.TexCoord = input.TexCoord;
     output.Color = input.Color;
 
-    float4 modelMultiplied = mul(model, float4(input.Position, 1.0f));
-    float4 viewMultiplied = mul(view, modelMultiplied);
-    float4 projectionMultiplied = mul(projection, viewMultiplied);
+    // float4 modelMultiplied = mul(model, float4(input.Position, 1.0f));
+    // float4 viewMultiplied = mul(view, modelMultiplied);
+    // float4 projectionMultiplied = mul(projection, viewMultiplied);
 
-    output.Position = projectionMultiplied;
+    // output.Position = projectionMultiplied;
+
+    // multiply by the MVP matrix
+    output.Position = mul(mvp, float4(input.Position, 1.0f));
 
     return output;
 }
