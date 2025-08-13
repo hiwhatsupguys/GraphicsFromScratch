@@ -24,8 +24,11 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
 # This assumes the SDL source is available in vendored/SDL
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
+#find_package(SDL3 REQUIRED)
 add_subdirectory(vendored/glm EXCLUDE_FROM_ALL)
+#find_package(glm CONFIG REQUIRED)
 add_subdirectory(vendored/tinyobjloader EXCLUDE_FROM_ALL)
+#find_package(tinyobjloader REQUIRED)
 
 # SDL_image (used for loading various image formats)
 set(SDLIMAGE_VENDORED ON)
