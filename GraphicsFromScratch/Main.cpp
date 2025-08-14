@@ -116,7 +116,7 @@ struct MatrixUniformBuffer {
 
 constexpr float ROUNDED_RECT_RADIUS = 0.2f;
 
-static MatrixUniformBuffer matrixUniform;
+//static MatrixUniformBuffer matrixUniform;
 
 struct Vertex {
     glm::vec3 position;
@@ -127,12 +127,21 @@ struct Vertex {
 SDL_FColor WHITE = {1, 1, 1, 1};
 
 // rect
+//Vertex vertices[4] = {
+//
+//    Vertex{{-0.5f, 0.5f, 0.0f}, {1, 0, 0, 1}, {0, 0}},
+//    Vertex{{0.5f, 0.5f, 0.0f}, {0, 1, 0, 1}, {1, 0}},
+//    Vertex{{0.5f, -0.5f, 0.0f}, {0, 0, 1, 1}, {1, 1}},
+//    Vertex{{-0.5f, -0.5f, 0.0f}, {1, 1, 0, 1}, {0, 1}},
+//
+//};
+
 Vertex vertices[4] = {
 
-    Vertex{{-0.5f, 0.5f, 0.0f}, {1, 0, 0, 1}, {0, 0}},
-    Vertex{{0.5f, 0.5f, 0.0f}, {0, 1, 0, 1}, {1, 0}},
-    Vertex{{0.5f, -0.5f, 0.0f}, {0, 0, 1, 1}, {1, 1}},
-    Vertex{{-0.5f, -0.5f, 0.0f}, {1, 1, 0, 1}, {0, 1}},
+    Vertex{{-0.5f, 0.5f, 0.0f}, WHITE, {0, 0}},
+    Vertex{{0.5f, 0.5f, 0.0f}, WHITE, {1, 0}},
+    Vertex{{0.5f, -0.5f, 0.0f}, WHITE, {1, 1}},
+    Vertex{{-0.5f, -0.5f, 0.0f}, WHITE, {0, 1}},
 
 };
 
@@ -163,14 +172,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_ClaimWindowForGPUDevice(device, window);
 
     SDL_GPUShader *vertexShader =
-        LoadShader(device, "Circle.vert", 0, 1, 0, 0);
+        LoadShader(device, "PositionColor.vert", 0, 1, 0, 0);
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(");
         return SDL_APP_FAILURE;
     }
 
     SDL_GPUShader *fragmentShader =
-        LoadShader(device, "RoundedRectangle.frag", 0, 1, 0, 0);
+        LoadShader(device, "Fractal.frag", 0, 1, 0, 0);
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(");
         return SDL_APP_FAILURE;
@@ -408,25 +417,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     float aspectRatio = widthf / heightf;
 
-    matrixUniform.projection =
-        glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
-    matrixUniform.view =
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
-
     float time = SDL_GetTicksNS() / 1e9f;
-
-    // rotation matrix
-    matrixUniform.model = glm::mat4(1.0f);
-    matrixUniform.model = glm::translate(
-        matrixUniform.model, glm::vec3(0.25 * cos(time), 0.25 * sin(time), 0.0f));
-    matrixUniform.model =
-        glm::rotate(matrixUniform.model, rotation, glm::vec3(1.0f, 0.3f, 0.5f));
-
-    SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
-                                 sizeof(matrixUniform));
-
-    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &ROUNDED_RECT_RADIUS, sizeof(ROUNDED_RECT_RADIUS));
-
 
     SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0, 0,
                                  0);
