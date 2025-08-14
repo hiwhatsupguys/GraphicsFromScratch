@@ -18,13 +18,13 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-SDL_Window* window;
-SDL_GPUDevice* device;
-SDL_GPUBuffer* vertexBuffer;
-SDL_GPUBuffer* indexBuffer;
+SDL_Window *window;
+SDL_GPUDevice *device;
+SDL_GPUBuffer *vertexBuffer;
+SDL_GPUBuffer *indexBuffer;
 // specifies which shaders to use, how many buffers, vertex inputs, color
 // blending
-SDL_GPUGraphicsPipeline* fillPipeline;
+SDL_GPUGraphicsPipeline *fillPipeline;
 
 Uint64 currentTime;
 Uint64 previousTime;
@@ -32,92 +32,31 @@ float deltaTime;
 
 float rotation;
 
-SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const char* shaderFilename,
-    const Uint32 samplerCount,
-    const Uint32 uniformBufferCount,
-    const Uint32 storageBufferCount,
-    const Uint32 storageTextureCount) {
-    // Auto-detect the shader stage from the file name for convenience
-    SDL_GPUShaderStage stage;
-    if (SDL_strstr(shaderFilename, ".vert")) {
-        stage = SDL_GPU_SHADERSTAGE_VERTEX;
-    }
-    else if (SDL_strstr(shaderFilename, ".frag")) {
-        stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-    }
-    else {
-        SDL_Log("Invalid shader stage!");
-        return nullptr;
-    }
-
-    char* fullPath;
-    SDL_GPUShaderFormat backendFormats = SDL_GetGPUShaderFormats(device);
-    SDL_GPUShaderFormat format = SDL_GPU_SHADERFORMAT_INVALID;
-    const char* entrypoint;
-
-    if (backendFormats & SDL_GPU_SHADERFORMAT_SPIRV) {
-        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/SPIRV/%s.spv",
-            shaderFilename);
-        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/SPIRV/%s.spv",
-        //              SDL_GetBasePath(), shaderFilename);
-        format = SDL_GPU_SHADERFORMAT_SPIRV;
-        entrypoint = "main";
-    }
-    else if (backendFormats & SDL_GPU_SHADERFORMAT_MSL) {
-        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/MSL/%s.msl",
-            shaderFilename);
-        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/MSL/%s.msl",
-        //              SDL_GetBasePath(), shaderFilename);
-        format = SDL_GPU_SHADERFORMAT_MSL;
-        entrypoint = "main0";
-    }
-    else if (backendFormats & SDL_GPU_SHADERFORMAT_DXIL) {
-        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/DXIL/%s.dxil",
-            shaderFilename);
-        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/DXIL/%s.dxil",
-        //              SDL_GetBasePath(), shaderFilename);
-        format = SDL_GPU_SHADERFORMAT_DXIL;
-        entrypoint = "main";
-    }
-    else {
-        SDL_Log("%s", "Unrecognized backend shader format!");
-        return nullptr;
-    }
-
-    size_t codeSize;
-    void* code = SDL_LoadFile(fullPath, &codeSize);
-    if (code == nullptr) {
-        SDL_Log("Failed to load shader from disk! %s", fullPath);
-        return nullptr;
-    }
-
-    SDL_GPUShaderCreateInfo shaderInfo{};
-    shaderInfo.code = (Uint8*)code;
-    shaderInfo.code_size = codeSize;
-    shaderInfo.entrypoint = entrypoint;
-    shaderInfo.format = format;
-    shaderInfo.stage = stage;
-    shaderInfo.num_samplers = samplerCount;
-    shaderInfo.num_uniform_buffers = uniformBufferCount;
-    shaderInfo.num_storage_buffers = storageBufferCount;
-    shaderInfo.num_storage_textures = storageTextureCount;
-    SDL_GPUShader* shader = SDL_CreateGPUShader(device, &shaderInfo);
-
-    if (shader == nullptr) {
-        SDL_Log("Failed to create shader!");
-        SDL_free(code);
-        return nullptr;
-    }
-
-    SDL_free(code);
-    return shader;
-}
-
 struct MatrixUniformBuffer {
     glm::mat4 mvp;
 };
 
 MatrixUniformBuffer matrixUniform;
+
+float horizontalPan = 0.0f;
+float verticalPan = 0.0f;
+float zoom = -1.0f;
+
+constexpr float PAN_SPEED = 0.5f;
+// between 0 and 1
+constexpr float ZOOM_SPEED = 0.1f;
+
+bool panLeftPressed = false;
+bool panRightPressed = false;
+bool panUpPressed = false;
+bool panDownPressed = false;
+bool zoomInPressed = false;
+bool zoomOutPressed = false;
+
+float time;
+
+bool paused = false;
+bool pauseTogglePressed = false;
 
 struct FractalUniformBuffer {
     glm::vec2 resolution;
@@ -130,7 +69,7 @@ FractalUniformBuffer fractalUniform;
 
 constexpr float ROUNDED_RECT_RADIUS = 0.2f;
 
-//static MatrixUniformBuffer matrixUniform;
+// static MatrixUniformBuffer matrixUniform;
 
 struct Vertex {
     glm::vec3 position;
@@ -138,11 +77,11 @@ struct Vertex {
     glm::vec2 uv;
 };
 
-SDL_FColor WHITE = { 1, 1, 1, 1 };
-SDL_FColor BLACK = { 0, 0, 0, 1 };
+SDL_FColor WHITE = {1, 1, 1, 1};
+SDL_FColor BLACK = {0, 0, 0, 1};
 
 // rect
-//Vertex vertices[4] = {
+// Vertex vertices[4] = {
 //
 //    Vertex{{-0.5f, 0.5f, 0.0f}, {1, 0, 0, 1}, {0, 0}},
 //    Vertex{{0.5f, 0.5f, 0.0f}, {0, 1, 0, 1}, {1, 0}},
@@ -160,10 +99,101 @@ Vertex vertices[4] = {
 
 };
 
-Uint16 indices[6] = { 0, 1, 2, 0, 2, 3 };
+Uint16 indices[6] = {0, 1, 2, 0, 2, 3};
+
+SDL_GPUShader *LoadShader(SDL_GPUDevice *device, const char *shaderFilename,
+                          const Uint32 samplerCount,
+                          const Uint32 uniformBufferCount,
+                          const Uint32 storageBufferCount,
+                          const Uint32 storageTextureCount) {
+    // Auto-detect the shader stage from the file name for convenience
+    SDL_GPUShaderStage stage;
+    if (SDL_strstr(shaderFilename, ".vert")) {
+        stage = SDL_GPU_SHADERSTAGE_VERTEX;
+    } else if (SDL_strstr(shaderFilename, ".frag")) {
+        stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    } else {
+        SDL_Log("Invalid shader stage!");
+        return nullptr;
+    }
+
+    char *fullPath;
+    SDL_GPUShaderFormat backendFormats = SDL_GetGPUShaderFormats(device);
+    SDL_GPUShaderFormat format = SDL_GPU_SHADERFORMAT_INVALID;
+    const char *entrypoint;
+
+    if (backendFormats & SDL_GPU_SHADERFORMAT_SPIRV) {
+        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/SPIRV/%s.spv",
+                     shaderFilename);
+        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/SPIRV/%s.spv",
+        //              SDL_GetBasePath(), shaderFilename);
+        format = SDL_GPU_SHADERFORMAT_SPIRV;
+        entrypoint = "main";
+    } else if (backendFormats & SDL_GPU_SHADERFORMAT_MSL) {
+        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/MSL/%s.msl",
+                     shaderFilename);
+        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/MSL/%s.msl",
+        //              SDL_GetBasePath(), shaderFilename);
+        format = SDL_GPU_SHADERFORMAT_MSL;
+        entrypoint = "main0";
+    } else if (backendFormats & SDL_GPU_SHADERFORMAT_DXIL) {
+        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/DXIL/%s.dxil",
+                     shaderFilename);
+        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/DXIL/%s.dxil",
+        //              SDL_GetBasePath(), shaderFilename);
+        format = SDL_GPU_SHADERFORMAT_DXIL;
+        entrypoint = "main";
+    } else {
+        SDL_Log("%s", "Unrecognized backend shader format!");
+        return nullptr;
+    }
+
+    size_t codeSize;
+    void *code = SDL_LoadFile(fullPath, &codeSize);
+    if (code == nullptr) {
+        SDL_Log("Failed to load shader from disk! %s", fullPath);
+        return nullptr;
+    }
+
+    SDL_GPUShaderCreateInfo shaderInfo{};
+    shaderInfo.code = (Uint8 *)code;
+    shaderInfo.code_size = codeSize;
+    shaderInfo.entrypoint = entrypoint;
+    shaderInfo.format = format;
+    shaderInfo.stage = stage;
+    shaderInfo.num_samplers = samplerCount;
+    shaderInfo.num_uniform_buffers = uniformBufferCount;
+    shaderInfo.num_storage_buffers = storageBufferCount;
+    shaderInfo.num_storage_textures = storageTextureCount;
+    SDL_GPUShader *shader = SDL_CreateGPUShader(device, &shaderInfo);
+
+    if (shader == nullptr) {
+        SDL_Log("Failed to create shader!");
+        SDL_free(code);
+        return nullptr;
+    }
+
+    SDL_free(code);
+    return shader;
+}
+
+void handleInputs(float deltaTime) {
+
+    if (pauseTogglePressed) {
+        paused = !paused;
+        pauseTogglePressed = false;
+    }
+
+    horizontalPan -=
+        (panRightPressed - panLeftPressed) * PAN_SPEED * -zoom * deltaTime;
+    verticalPan -=
+        (panUpPressed - panDownPressed) * PAN_SPEED * -zoom * deltaTime;
+
+    zoom *= 1 - (zoomInPressed - zoomOutPressed) * (1 - ZOOM_SPEED) * deltaTime;
+}
 
 /* This function runs once at startup. */
-SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
+SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     /* Create the window */
     // window = SDL_CreateWindow("Graphics From Scratch", 800, 600,
     //                           SDL_WINDOW_FULLSCREEN);
@@ -171,29 +201,29 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     // SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
 
     window = SDL_CreateWindow("Graphics From Scratch", 800, 600,
-        SDL_WINDOW_RESIZABLE);
+                              SDL_WINDOW_RESIZABLE);
     SDL_RaiseWindow(window);
 
     // create gpu device with shaders for vulkan or metal and choose the best
     // driver NULL chooses the best driver
     device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV |
-        SDL_GPU_SHADERFORMAT_MSL |
-        SDL_GPU_SHADERFORMAT_DXIL,
-        true, nullptr);
+                                     SDL_GPU_SHADERFORMAT_MSL |
+                                     SDL_GPU_SHADERFORMAT_DXIL,
+                                 true, nullptr);
 
     SDL_Log("Using GPU device driver: %s", SDL_GetGPUDeviceDriver(device));
     SDL_Log("Base path: %s", SDL_GetBasePath());
 
     SDL_ClaimWindowForGPUDevice(device, window);
 
-    SDL_GPUShader* vertexShader =
+    SDL_GPUShader *vertexShader =
         LoadShader(device, "PositionColorTexturePerspective.vert", 0, 1, 0, 0);
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(");
         return SDL_APP_FAILURE;
     }
 
-    SDL_GPUShader* fragmentShader =
+    SDL_GPUShader *fragmentShader =
         LoadShader(device, "Fractal.frag", 0, 1, 0, 0);
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(");
@@ -202,7 +232,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
     SDL_GPUColorTargetBlendState blendState{};
     blendState.enable_color_write_mask = true;
-    blendState.color_write_mask = SDL_GPU_COLORCOMPONENT_R | SDL_GPU_COLORCOMPONENT_G | SDL_GPU_COLORCOMPONENT_B | SDL_GPU_COLORCOMPONENT_A;
+    blendState.color_write_mask =
+        SDL_GPU_COLORCOMPONENT_R | SDL_GPU_COLORCOMPONENT_G |
+        SDL_GPU_COLORCOMPONENT_B | SDL_GPU_COLORCOMPONENT_A;
     blendState.enable_blend = true;
     blendState.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
     blendState.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
@@ -237,13 +269,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     // format: float3 Position
     // offset: how many bytes over from the start of Input
     vertexAttributes[0] =
-        SDL_GPUVertexAttribute{ 0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
-                               offsetof(Vertex, Vertex::position) };
+        SDL_GPUVertexAttribute{0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+                               offsetof(Vertex, Vertex::position)};
     vertexAttributes[1] =
-        SDL_GPUVertexAttribute{ 1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
-                               offsetof(Vertex, Vertex::color) };
+        SDL_GPUVertexAttribute{1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
+                               offsetof(Vertex, Vertex::color)};
     vertexAttributes[2] = SDL_GPUVertexAttribute{
-        2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(Vertex, Vertex::uv) };
+        2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(Vertex, Vertex::uv)};
 
     SDL_GPUVertexInputState vertexInputState{};
     vertexInputState.num_vertex_buffers = 1;
@@ -263,7 +295,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     fillPipeline = SDL_CreateGPUGraphicsPipeline(device, &pipelineInfo);
     if (!fillPipeline) {
         SDL_Log("Failed to create graphics pipeline, error: %s",
-            SDL_GetError());
+                SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
@@ -292,26 +324,26 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     transferBufferCreateInfo.size =
         vertexBufferCreateInfo.size +
         indexBufferCreateInfo.size; // also the size of the vertex buffer
-    SDL_GPUTransferBuffer* transferBuffer =
+    SDL_GPUTransferBuffer *transferBuffer =
         SDL_CreateGPUTransferBuffer(device, &transferBufferCreateInfo);
 
-    void* transferData =
-        (void*)SDL_MapGPUTransferBuffer(device, transferBuffer, false);
+    void *transferData =
+        (void *)SDL_MapGPUTransferBuffer(device, transferBuffer, false);
 
     SDL_memcpy(transferData, vertices, vertexBufferCreateInfo.size);
     // copy index buffer to next section
     // dest, source
-    void* transferDataIndicesPtr = static_cast<void*>(
-        static_cast<char*>(transferData) + vertexBufferCreateInfo.size);
+    void *transferDataIndicesPtr = static_cast<void *>(
+        static_cast<char *>(transferData) + vertexBufferCreateInfo.size);
     SDL_memcpy(transferDataIndicesPtr, indices, indexBufferCreateInfo.size);
 
     SDL_UnmapGPUTransferBuffer(device, transferBuffer);
 
     // upload transfer data to vertex buffer
-    SDL_GPUCommandBuffer* uploadCommandBuffer =
+    SDL_GPUCommandBuffer *uploadCommandBuffer =
         SDL_AcquireGPUCommandBuffer(device);
 
-    SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
+    SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
 
     SDL_GPUTransferBufferLocation transferBufferLocation{};
     transferBufferLocation.transfer_buffer = transferBuffer;
@@ -322,7 +354,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     bufferRegion.size = vertexBufferCreateInfo.size;
     bufferRegion.offset = 0;
     SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
-        false);
+                          false);
 
     transferBufferLocation.offset =
         vertexBufferCreateInfo.size; // move over to the index buffer section
@@ -330,7 +362,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     bufferRegion.size = indexBufferCreateInfo.size;
     bufferRegion.offset = 0;
     SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
-        false);
+                          false);
 
     SDL_EndGPUCopyPass(copyPass);
 
@@ -345,49 +377,104 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 }
 
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
-SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
+SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
+
     switch (event->type) {
 
-    case SDL_EVENT_QUIT:
-    return SDL_APP_SUCCESS;
+    case (SDL_EVENT_QUIT):
+        return SDL_APP_SUCCESS;
 
-    case SDL_EVENT_KEY_DOWN:
+    case (SDL_EVENT_KEY_DOWN):
+        switch (event->key.key) {
+        case (SDLK_W):
+            panUpPressed = true;
+            break;
+        case (SDLK_S):
+            panDownPressed = true;
+            break;
+        case (SDLK_A):
+            panLeftPressed = true;
+            break;
+        case (SDLK_D):
+            panRightPressed = true;
+            break;
+        case (SDLK_LSHIFT):
+            zoomInPressed = true;
+            break;
+        case (SDLK_SPACE):
+            zoomOutPressed = true;
+            break;
+        case (SDLK_P):
+            pauseTogglePressed = true;
+        }
+        break;
 
-
+    case (SDL_EVENT_KEY_UP):
+        switch (event->key.key) {
+        case (SDLK_W):
+            panUpPressed = false;
+            break;
+        case (SDLK_S):
+            panDownPressed = false;
+            break;
+        case (SDLK_A):
+            panLeftPressed = false;
+            break;
+        case (SDLK_D):
+            panRightPressed = false;
+            break;
+        case (SDLK_LSHIFT):
+            zoomInPressed = false;
+            break;
+        case (SDLK_SPACE):
+            zoomOutPressed = false;
+            break;
+        }
+        break;
     }
     return SDL_APP_CONTINUE;
 }
 
 /* This function runs once per frame, and is the heart of the program. */
-SDL_AppResult SDL_AppIterate(void* appstate) {
+SDL_AppResult SDL_AppIterate(void *appstate) {
 
     currentTime = SDL_GetTicksNS();
     deltaTime = (currentTime - previousTime) / 1e9f;
     // rotation += deltaTime: 1 radian per second
     // want: pi radians per second
-    //rotation += deltaTime * (SDL_PI_F) / 2;
+    // rotation += deltaTime * (SDL_PI_F) / 2;
 
     previousTime = currentTime;
+
+    if (!paused) {
+        time += deltaTime;
+    }
+
+    handleInputs(deltaTime);
 
     int windowWidth, windowHeight;
     SDL_GetWindowSize(window, &windowWidth, &windowHeight);
 
     // list of commands to send to the gpu for fast execution
-    SDL_GPUCommandBuffer* commandBuffer = SDL_AcquireGPUCommandBuffer(device);
+    SDL_GPUCommandBuffer *commandBuffer = SDL_AcquireGPUCommandBuffer(device);
 
-    // swapchain: basically loading the next frame as the previous one is being
-    // drawn
-    SDL_GPUTexture* swapchainTexture;
+    // swapchain: basically loading the next frame as the previous one is
+    // being drawn
+    SDL_GPUTexture *swapchainTexture;
     // window width and height
     Uint32 width, height;
     // acquire the next swapchain texture
-    // be careful because the texture might be NULL (ex. window is minimized)
-    // SDL_WaitAndAcquireGPUSwapchainTexture(commandBuffer, window,
-    //                                      &swapchainTexture, &width, &height);
+    // be careful because the texture might be NULL (ex. window is
+    // minimized) SDL_WaitAndAcquireGPUSwapchainTexture(commandBuffer,
+    // window,
+    //                                      &swapchainTexture, &width,
+    //                                      &height);
     SDL_WaitAndAcquireGPUSwapchainTexture(commandBuffer, window,
-        &swapchainTexture, &width, &height);
+                                          &swapchainTexture, &width, &height);
     float widthf = static_cast<float>(width);
     float heightf = static_cast<float>(height);
+
+    float aspectRatio = widthf / heightf;
 
     // if the texture is NULL (ex. minimized), submit and return
     if (swapchainTexture == nullptr) {
@@ -402,9 +489,10 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     // replace previous color, clear (screen?) with color
     // colorTargetInfo.clear_color =
-    //    SDL_FColor{0xFB / 255.0f, 0xEA / 255.0f, 0xFF / 255.0f, 255 / 255.0f};
+    //    SDL_FColor{0xFB / 255.0f, 0xEA / 255.0f, 0xFF / 255.0f, 255 /
+    //    255.0f};
     colorTargetInfo.clear_color =
-        SDL_FColor{ 0x71 / 255.0f, 0x79 / 255.0f, 0x7E / 255.0f, 255 / 255.0f };
+        SDL_FColor{0x71 / 255.0f, 0x79 / 255.0f, 0x7E / 255.0f, 255 / 255.0f};
     // discard previuos content
     colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR; // or SDL_GPU_LOADOP_LOAD to
     // keep the previous content
@@ -415,9 +503,9 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     // BEGIN RENDER PASS
 
-    // color_target_infos: array of render targets, lets you render multiple at
-    // the same time num_color_targets: size of array
-    SDL_GPURenderPass* renderPass =
+    // color_target_infos: array of render targets, lets you render multiple
+    // at the same time num_color_targets: size of array
+    SDL_GPURenderPass *renderPass =
         SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, nullptr);
 
     // bind the graphics pipeline
@@ -433,25 +521,27 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     indexBufferBinding.buffer = indexBuffer;
     indexBufferBinding.offset = 0;
     SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding,
-        SDL_GPU_INDEXELEMENTSIZE_16BIT);
+                           SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
-    float aspectRatio = widthf / heightf;
+    // create matrices so the gpu can use them to transform the vertices to
+    // go on the screen where they belong
+    // glm::mat4 projectionMatrix =
+    //   glm::perspective(glm::radians(70.0f), aspectRatio, 0.1f, 100.0f);
 
-    float time = SDL_GetTicksNS() / 1e9f;
+    // try ortho
+    glm::mat4 projectionMatrix =
+        glm::perspective(glm::radians(70.0f), 1.0f, 0.1f, 100.0f);
+    // glm::mat4 projectionMatrix = glm::mat4(1.0f);
 
-    // create matrices so the gpu can use them to transform the vertices to go on the screen where they belong
-    //glm::mat4 projectionMatrix =
-    //    glm::perspective(glm::radians(70.0f), aspectRatio, 0.1f, 100.0f);
-    //glm::mat4 viewMatrix =
-    //    glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -0.8f));
+    glm::mat4 viewMatrix = glm::translate(
+        glm::mat4(1.0f), glm::vec3(horizontalPan, verticalPan, zoom));
 
     //// rotation matrix
-    //glm::mat4 modelMatrix =
-    //    glm::rotate(glm::mat4(1.0f), 0.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+    // glm::mat4 modelMatrix =
+    //     glm::rotate(glm::mat4(1.0f), 0.0f, glm::vec3(0.0f, 1.0f, 0.0f));
 
     // calculate mvp matrix to send to the vertex shader
-    //matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
-    matrixUniform.mvp = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+    matrixUniform.mvp = projectionMatrix * viewMatrix /** modelMatrix*/;
 
     float constantR = cos(time * 0.5);
     float constantI = sin(time * 0.5);
@@ -462,12 +552,13 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     fractalUniform.maxIterations = 1000;
 
     SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
-        sizeof(matrixUniform));
+                                 sizeof(matrixUniform));
 
-    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &fractalUniform, sizeof(fractalUniform));
+    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &fractalUniform,
+                                   sizeof(fractalUniform));
 
     SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0, 0,
-        0);
+                                 0);
 
     // END RENDER PASS
 
@@ -480,7 +571,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 }
 
 /* This function runs once at shutdown. */
-void SDL_AppQuit(void* appstate, SDL_AppResult result) {
+void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     SDL_ReleaseGPUBuffer(device, vertexBuffer);
     SDL_ReleaseGPUBuffer(device, indexBuffer);
 
