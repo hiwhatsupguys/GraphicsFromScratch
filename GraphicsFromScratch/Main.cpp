@@ -119,6 +119,15 @@ struct MatrixUniformBuffer {
 
 MatrixUniformBuffer matrixUniform;
 
+struct FractalUniformBuffer {
+    glm::vec2 resolution;
+    glm::vec2 constant;
+    float yScale; // instead of y -1 to 1, scale to -yScale to yScale
+    Uint32 maxIterations;
+};
+
+FractalUniformBuffer fractalUniform;
+
 constexpr float ROUNDED_RECT_RADIUS = 0.2f;
 
 //static MatrixUniformBuffer matrixUniform;
@@ -144,10 +153,10 @@ SDL_FColor BLACK = { 0, 0, 0, 1 };
 
 Vertex vertices[4] = {
 
-    Vertex{{-0.5f, 0.5f, 0.0f}, WHITE, {0, 0}},
-    Vertex{{0.5f, 0.5f, 0.0f}, WHITE, {1, 0}},
-    Vertex{{0.5f, -0.5f, 0.0f}, WHITE, {1, 1}},
-    Vertex{{-0.5f, -0.5f, 0.0f}, WHITE, {0, 1}},
+    Vertex{{-1.0f, 1.0f, 0.0f}, WHITE, {0, 0}},
+    Vertex{{1.0f, 1.0f, 0.0f}, WHITE, {1, 0}},
+    Vertex{{1.0f, -1.0f, 0.0f}, WHITE, {1, 1}},
+    Vertex{{-1.0f, -1.0f, 0.0f}, WHITE, {0, 1}},
 
 };
 
@@ -185,7 +194,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     }
 
     SDL_GPUShader* fragmentShader =
-        LoadShader(device, "Fractal.frag", 0, 0, 0, 0);
+        LoadShader(device, "Fractal.frag", 0, 1, 0, 0);
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(");
         return SDL_APP_FAILURE;
@@ -337,9 +346,14 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
-    if (event->type == SDL_EVENT_QUIT) {
-        return SDL_APP_SUCCESS; /* end the program, reporting success to the OS.
-                                 */
+    switch (event->type) {
+
+    case SDL_EVENT_QUIT:
+    return SDL_APP_SUCCESS;
+
+    case SDL_EVENT_KEY_DOWN:
+
+
     }
     return SDL_APP_CONTINUE;
 }
@@ -426,20 +440,31 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     float time = SDL_GetTicksNS() / 1e9f;
 
     // create matrices so the gpu can use them to transform the vertices to go on the screen where they belong
-    glm::mat4 projectionMatrix =
-        glm::perspective(glm::radians(70.0f), aspectRatio, 0.1f, 100.0f);
-    glm::mat4 viewMatrix =
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+    //glm::mat4 projectionMatrix =
+    //    glm::perspective(glm::radians(70.0f), aspectRatio, 0.1f, 100.0f);
+    //glm::mat4 viewMatrix =
+    //    glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -0.8f));
 
-    // rotation matrix
-    glm::mat4 modelMatrix =
-        glm::rotate(glm::mat4(1.0f), 0.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+    //// rotation matrix
+    //glm::mat4 modelMatrix =
+    //    glm::rotate(glm::mat4(1.0f), 0.0f, glm::vec3(0.0f, 1.0f, 0.0f));
 
     // calculate mvp matrix to send to the vertex shader
-    matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
+    //matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
+    matrixUniform.mvp = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+
+    float constantR = cos(time * 0.5);
+    float constantI = sin(time * 0.5);
+
+    fractalUniform.yScale = 1.5f; // scale y from -scale to scale
+    fractalUniform.resolution = glm::vec2(widthf, heightf);
+    fractalUniform.constant = 0.7885f * glm::vec2(constantR, constantI);
+    fractalUniform.maxIterations = 1000;
 
     SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
         sizeof(matrixUniform));
+
+    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &fractalUniform, sizeof(fractalUniform));
 
     SDL_DrawGPUIndexedPrimitives(renderPass, SDL_arraysize(indices), 1, 0, 0,
         0);
