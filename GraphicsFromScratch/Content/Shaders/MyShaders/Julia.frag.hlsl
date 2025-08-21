@@ -61,10 +61,15 @@ float computeBrightness(float numIterations, float2 zn)
     }
 
     float absZ = length(zn);
+    
 
-    return max(0, 
+    float brightness = max(0, 
     float(numIterations) + 1 - log(log(absZ)) / log(2)
     );
+
+    // need to divide by a big number since we could be getting a number near or at maxIterations
+    brightness /= min(100, maxIterations);
+    return brightness;
 
 }
 
@@ -87,8 +92,6 @@ Output main(Input input)
     // float brightness = max(0, float(numIterations));
     float brightness = computeBrightness(numIterations, zn);
 
-    // need to divide by a big number since we could be getting a number near or at maxIterations
-    brightness /= 100;
     
     result.Color = float4(brightness, 0, 0, 1);
     return result;

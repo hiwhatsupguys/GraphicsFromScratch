@@ -40,7 +40,7 @@ MatrixUniformBuffer matrixUniform;
 
 float horizontalPan = 0.0f;
 float verticalPan = 0.0f;
-float zoom = -1.0f;
+float zoom = -1.5f;
 
 constexpr float PAN_SPEED = 0.5f;
 // between 0 and 1
@@ -53,6 +53,10 @@ bool panDownPressed = false;
 bool zoomInPressed = false;
 bool zoomOutPressed = false;
 
+bool increaseMaxIterationsPressed = false;
+bool decreaseMaxIterationsPressed = false;
+constexpr Uint32 MAX_ITERATIONS_STEP = 50;
+
 float time;
 
 bool paused = false;
@@ -62,7 +66,8 @@ struct FractalUniformBuffer {
     glm::vec2 resolution;
     glm::vec2 constant;
     float yScale; // instead of y -1 to 1, scale to -yScale to yScale
-    Uint32 maxIterations;
+    Uint32 maxIterations = 1000;
+    //Uint32 maxIterations = 20;
 };
 
 FractalUniformBuffer fractalUniform;
@@ -179,6 +184,20 @@ SDL_GPUShader *LoadShader(SDL_GPUDevice *device, const char *shaderFilename,
 
 void handleInputs(float deltaTime) {
 
+    if (increaseMaxIterationsPressed) {
+        //fractalUniform.maxIterations += MAX_ITERATIONS_STEP;
+        fractalUniform.maxIterations = static_cast<Uint32>(fractalUniform.maxIterations * 1.2);
+        SDL_Log("Max iterations: %d", fractalUniform.maxIterations);
+        increaseMaxIterationsPressed = false;
+    }
+
+    if (decreaseMaxIterationsPressed) {
+        //fractalUniform.maxIterations -= MAX_ITERATIONS_STEP;
+        fractalUniform.maxIterations = static_cast<Uint32>(fractalUniform.maxIterations / 1.2);
+        SDL_Log("Max iterations: %d", fractalUniform.maxIterations);
+        decreaseMaxIterationsPressed = false;
+    }
+
     if (pauseTogglePressed) {
         paused = !paused;
         pauseTogglePressed = false;
@@ -224,7 +243,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
 
     SDL_GPUShader *fragmentShader =
-        LoadShader(device, "Fractal.frag", 0, 1, 0, 0);
+        LoadShader(device, "Julia.frag", 0, 1, 0, 0);
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(");
         return SDL_APP_FAILURE;
@@ -406,7 +425,15 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
             break;
         case (SDLK_P):
             pauseTogglePressed = true;
+            break;
+        case (SDLK_UP):
+            increaseMaxIterationsPressed = true;
+            break;
+        case (SDLK_DOWN):
+            decreaseMaxIterationsPressed = true;
+            break;
         }
+
         break;
 
     case (SDL_EVENT_KEY_UP):
@@ -549,7 +576,6 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     fractalUniform.yScale = 1.5f; // scale y from -scale to scale
     fractalUniform.resolution = glm::vec2(widthf, heightf);
     fractalUniform.constant = 0.7885f * glm::vec2(constantR, constantI);
-    fractalUniform.maxIterations = 1000;
 
     SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
                                  sizeof(matrixUniform));

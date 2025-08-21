@@ -51,19 +51,19 @@ fragment main0_out main0(main0_in in [[stage_in]], constant type_UBO& UBO [[buff
         }
     }
     float _77 = float(_57);
-    float _93;
+    float _96;
     do
     {
         float _82 = float(UBO.maxIterations);
         if (_77 == _82)
         {
-            _93 = _82;
+            _96 = _82;
             break;
         }
-        _93 = precise::max(0.0, (_77 + 1.0) - (log(log(length(float3(_54, _77).xy))) * 1.44269502162933349609375));
+        _96 = precise::max(0.0, (_77 + 1.0) - (log(log(length(float3(_54, _77).xy))) * 1.44269502162933349609375)) / float(min(100u, UBO.maxIterations));
         break;
     } while(false);
-    out.out_var_SV_Target0 = float4(_93 / (log(float(1u + UBO.maxIterations)) * 10.0), 0.0, 0.0, 1.0);
+    out.out_var_SV_Target0 = float4(_96, 0.0, 0.0, 1.0);
     return out;
 }
 
