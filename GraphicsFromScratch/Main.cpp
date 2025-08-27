@@ -67,7 +67,7 @@ struct FractalUniformBuffer {
     glm::vec2 constant;
     float yScale; // instead of y -1 to 1, scale to -yScale to yScale
     Uint32 maxIterations = 1000;
-    //Uint32 maxIterations = 20;
+    // Uint32 maxIterations = 20;
 };
 
 FractalUniformBuffer fractalUniform;
@@ -185,15 +185,17 @@ SDL_GPUShader *LoadShader(SDL_GPUDevice *device, const char *shaderFilename,
 void handleInputs(float deltaTime) {
 
     if (increaseMaxIterationsPressed) {
-        //fractalUniform.maxIterations += MAX_ITERATIONS_STEP;
-        fractalUniform.maxIterations = static_cast<Uint32>(fractalUniform.maxIterations * 1.2);
+        // fractalUniform.maxIterations += MAX_ITERATIONS_STEP;
+        fractalUniform.maxIterations =
+            static_cast<Uint32>(fractalUniform.maxIterations * 1.2);
         SDL_Log("Max iterations: %d", fractalUniform.maxIterations);
         increaseMaxIterationsPressed = false;
     }
 
     if (decreaseMaxIterationsPressed) {
-        //fractalUniform.maxIterations -= MAX_ITERATIONS_STEP;
-        fractalUniform.maxIterations = static_cast<Uint32>(fractalUniform.maxIterations / 1.2);
+        // fractalUniform.maxIterations -= MAX_ITERATIONS_STEP;
+        fractalUniform.maxIterations =
+            static_cast<Uint32>(fractalUniform.maxIterations / 1.2);
         SDL_Log("Max iterations: %d", fractalUniform.maxIterations);
         decreaseMaxIterationsPressed = false;
     }
@@ -556,8 +558,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     //   glm::perspective(glm::radians(70.0f), aspectRatio, 0.1f, 100.0f);
 
     // try ortho
-    glm::mat4 projectionMatrix =
+     glm::mat4 projectionMatrix =
         glm::perspective(glm::radians(70.0f), 1.0f, 0.1f, 100.0f);
+     //glm::mat4 projectionMatrix =
+     //   glm::ortho(-1.0f, 1.0f, 1.0f, -1.0f, 0.1f, 100.0f);
     // glm::mat4 projectionMatrix = glm::mat4(1.0f);
 
     glm::mat4 viewMatrix = glm::translate(
