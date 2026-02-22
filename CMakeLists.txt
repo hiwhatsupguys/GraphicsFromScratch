@@ -36,7 +36,8 @@ set(SDLIMAGE_AVIF OFF)	# disable formats we don't use to make the build faster a
 set(SDLIMAGE_BMP OFF)
 set(SDLIMAGE_JPEG OFF)
 set(SDLIMAGE_WEBP OFF)
-add_subdirectory(vendored/SDL_image EXCLUDE_FROM_ALL)
+find_package(SDL3_image REQUIRED)
+# add_subdirectory(vendored/SDL_image EXCLUDE_FROM_ALL)
 
 # Include sub-projects.
 add_subdirectory ("GraphicsFromScratch")
