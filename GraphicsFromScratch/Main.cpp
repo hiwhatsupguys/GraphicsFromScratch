@@ -580,7 +580,8 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
         break;
 
     case SDL_EVENT_MOUSE_MOTION:
-        mouseVelocityVector = {event->motion.xrel, event->motion.yrel};
+        if (SDL_GetWindowRelativeMouseMode(window))
+            mouseVelocityVector = {event->motion.xrel, event->motion.yrel};
         // SDL_Log("%f, %f", mouseVelocityVector.x, mouseVelocityVector.y);
         break;
 
