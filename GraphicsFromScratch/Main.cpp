@@ -22,7 +22,15 @@
 #include <glm/gtx/euler_angles.hpp>
 
 #include <string>
+#include <ios>
+#include <iterator>
+#include <fstream>
+#include <format>
 #include <vector>
+#include <stdexcept>
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 
 SDL_Window *window;
 int windowWidth, windowHeight;
@@ -71,7 +79,7 @@ float deltaTime;
 float rotation;
 
 // radians per second
-const float ROTATION_SPEED = SDL_PI_F / 4.0f;
+constexpr float ROTATION_SPEED = SDL_PI_F / 4.0f;
 
 bool cameraUpPressed;
 bool cameraDownPressed;
@@ -98,6 +106,16 @@ struct MatrixUniformBuffer {
 
 static MatrixUniformBuffer matrixUniform;
 
+struct ShaderInfo {
+    Uint32 samplers;
+    Uint32 storageTextures;
+    Uint32 storageBuffers;
+    Uint32 uniformBuffers;
+};
+
+const std::string BASE_PATH = SDL_GetBasePath();
+const std::string COMPILED_SHADER_PATH = BASE_PATH + "/Content/Shaders/Compiled/";
+
 constexpr glm::vec4 WHITE{1, 1, 1, 1};
 
 //// rect
@@ -123,80 +141,94 @@ constexpr glm::vec4 WHITE{1, 1, 1, 1};
 //
 // Uint32 indices[6] = {0, 1, 2, 0, 2, 3};
 
+ShaderInfo loadShaderInfoFromJson(const std::string &shaderFilename) {
+    std::string jsonFilePath = COMPILED_SHADER_PATH + "/JSON/" + shaderFilename + ".json";
+    std::ifstream jsonFile{ jsonFilePath };
+    if (!jsonFile) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "json file not found :(");
+        std::exit(1);
+    }
+    json data = json::parse(jsonFile);
+    ShaderInfo shaderInfo = {
+        .samplers = data["samplers"],
+        .storageTextures = data["storage_textures"],
+        .storageBuffers = data["storage_buffers"],
+        .uniformBuffers = data["uniform_buffers"],
+    };
+
+    return shaderInfo;
+    
+}
+
+
 // ripped from SDL_gpu examples
-SDL_GPUShader *LoadShader(SDL_GPUDevice *device, const char *shaderFilename,
-                          const Uint32 samplerCount,
-                          const Uint32 uniformBufferCount,
-                          const Uint32 storageBufferCount,
-                          const Uint32 storageTextureCount) {
+SDL_GPUShader *LoadShader(SDL_GPUDevice *device, const std::string &shaderFilename) {
     // Auto-detect the shader stage from the file name for convenience
     SDL_GPUShaderStage stage;
-    if (SDL_strstr(shaderFilename, ".vert")) {
+    if (shaderFilename.contains(".vert"))
         stage = SDL_GPU_SHADERSTAGE_VERTEX;
-    } else if (SDL_strstr(shaderFilename, ".frag")) {
+    else if (shaderFilename.contains(".frag"))
         stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-    } else {
-        SDL_Log("Invalid shader stage!");
+    else {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR,"Invalid shader stage!" );
+        std::exit(1);
         return nullptr;
     }
 
-    char *fullPath;
+    std::string fullPath;
     SDL_GPUShaderFormat backendFormats = SDL_GetGPUShaderFormats(device);
     SDL_GPUShaderFormat format = SDL_GPU_SHADERFORMAT_INVALID;
     const char *entrypoint;
 
     if (backendFormats & SDL_GPU_SHADERFORMAT_SPIRV) {
-        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/SPIRV/%s.spv",
-                     shaderFilename);
-        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/SPIRV/%s.spv",
-        //              SDL_GetBasePath(), shaderFilename);
+
+        fullPath = std::format("{}/SPIRV/{}.spv", COMPILED_SHADER_PATH, shaderFilename);
         format = SDL_GPU_SHADERFORMAT_SPIRV;
         entrypoint = "main";
+
     } else if (backendFormats & SDL_GPU_SHADERFORMAT_MSL) {
-        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/MSL/%s.msl",
-                     shaderFilename);
-        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/MSL/%s.msl",
-        //              SDL_GetBasePath(), shaderFilename);
+
+        fullPath = std::format("{}/MSL/{}.msl", COMPILED_SHADER_PATH, shaderFilename);
         format = SDL_GPU_SHADERFORMAT_MSL;
         entrypoint = "main0";
+
     } else if (backendFormats & SDL_GPU_SHADERFORMAT_DXIL) {
-        SDL_asprintf(&fullPath, "Content/Shaders/Compiled/DXIL/%s.dxil",
-                     shaderFilename);
-        // SDL_asprintf(&fullPath, "%sContent/Shaders/Compiled/DXIL/%s.dxil",
-        //              SDL_GetBasePath(), shaderFilename);
+
+        fullPath = std::format("{}/DXIL/{}.dxil", COMPILED_SHADER_PATH, shaderFilename);
         format = SDL_GPU_SHADERFORMAT_DXIL;
         entrypoint = "main";
+
     } else {
-        SDL_Log("%s", "Unrecognized backend shader format!");
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Unrecognized backend shader format!");
+        std::exit(1);
         return nullptr;
     }
 
-    size_t codeSize;
-    void *code = SDL_LoadFile(fullPath, &codeSize);
-    if (code == nullptr) {
-        SDL_Log("Failed to load shader from disk! %s", fullPath);
-        return nullptr;
-    }
+    ShaderInfo info = loadShaderInfoFromJson(shaderFilename);
+
+    std::ifstream shaderFile{ fullPath, std::ios::binary};
+    if (!shaderFile)
+        throw std::runtime_error{ "Failed to load shader from disk! " + fullPath };
+
+    std::vector<Uint8> code{ std::istreambuf_iterator(shaderFile), {} };
 
     SDL_GPUShaderCreateInfo shaderInfo{};
-    shaderInfo.code = (Uint8 *)code;
-    shaderInfo.code_size = codeSize;
+    shaderInfo.code = (Uint8 *)code.data();
+    shaderInfo.code_size = code.size();
     shaderInfo.entrypoint = entrypoint;
     shaderInfo.format = format;
     shaderInfo.stage = stage;
-    shaderInfo.num_samplers = samplerCount;
-    shaderInfo.num_uniform_buffers = uniformBufferCount;
-    shaderInfo.num_storage_buffers = storageBufferCount;
-    shaderInfo.num_storage_textures = storageTextureCount;
+    shaderInfo.num_samplers = info.samplers;
+    shaderInfo.num_storage_textures = info.storageTextures;
+    shaderInfo.num_storage_buffers = info.storageBuffers;
+    shaderInfo.num_uniform_buffers = info.uniformBuffers;
     SDL_GPUShader *shader = SDL_CreateGPUShader(device, &shaderInfo);
 
     if (shader == nullptr) {
-        SDL_Log("Failed to create shader!");
-        SDL_free(code);
-        return nullptr;
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create shader!");
+        std::exit(1);
     }
 
-    SDL_free(code);
     return shader;
 }
 
@@ -220,7 +252,7 @@ void init() {
                                  true, nullptr);
 
     SDL_Log("Using GPU device driver: %s", SDL_GetGPUDeviceDriver(device));
-    SDL_Log("Base path: %s", SDL_GetBasePath());
+    SDL_Log("Base path: %s", BASE_PATH.c_str());
 
     SDL_ClaimWindowForGPUDevice(device, window);
 
@@ -240,26 +272,27 @@ void init() {
 
     camera.position = glm::vec3{0, 1, 3};
     camera.target = glm::vec3{0, 1, 0};
+
 }
 
 void setupPipeline() {
     // KEEP IN MIND THE UNIFORM BUFFER COUNT
-    SDL_GPUShader *vertexShader =
-        LoadShader(device, "PositionColorTexturePerspective.vert", 0, 1, 0, 0);
+    SDL_GPUShader* vertexShader = LoadShader(device, "PositionColorTexturePerspective.vert");
     if (!vertexShader) {
-        SDL_Log("vertex shader failed ;(");
-        SDL_Quit();
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "vertex shader failed ;(");
+        std::exit(1);
     }
 
     // KEEP IN MIND THE UNIFORM BUFFER COUNT
     SDL_GPUShader *fragmentShader =
-        LoadShader(device, "CustomTexturedQuad.frag", 1, 0, 0, 0);
+        LoadShader(device, "CustomTexturedQuad.frag");
     // SDL_GPUShader *fragmentShader =
     //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
-        SDL_Log("fragment shader failed ;(");
-        SDL_Quit();
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "fragment shader failed ;(");
+        std::exit(1);
     }
+
     SDL_GPUColorTargetDescription colorTargetDescriptions[1];
     colorTargetDescriptions[0] = {};
     colorTargetDescriptions[0].format =
@@ -323,9 +356,9 @@ void setupPipeline() {
 
     fillPipeline = SDL_CreateGPUGraphicsPipeline(device, &pipelineInfo);
     if (!fillPipeline) {
-        SDL_Log("Failed to create graphics pipeline, error: %s",
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create graphics pipeline, error: %s",
                 SDL_GetError());
-        SDL_Quit();
+        std::exit(1);
     }
 
     SDL_ReleaseGPUShader(device, vertexShader);
@@ -358,7 +391,8 @@ Model loadModel(const char *meshPath, const char *modelPath) {
     imageDataSurface =
         SDL_ConvertSurface(imageDataSurface, SDL_PIXELFORMAT_ABGR8888);
     if (!imageDataSurface) {
-        SDL_Log("image load failed ;(");
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "image load failed ;(");
+        std::exit(1);
         // return SDL_APP_FAILURE;
     }
 
@@ -646,6 +680,9 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     // rotation += deltaTime: 1 radian per second
     // want: pi radians per second
     rotation += ROTATION_SPEED * deltaTime;
+
+    //float fps = 1.0f / deltaTime;
+    //SDL_Log("FPS: %f", fps);
 
     updateCamera(deltaTime);
     mouseVelocityVector = {0.0f, 0.0f};

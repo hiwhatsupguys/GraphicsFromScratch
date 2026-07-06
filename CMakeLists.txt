@@ -3,7 +3,6 @@
 #
 cmake_minimum_required(VERSION 3.16)
 
-
 set(CMAKE_CXX_STANDARD 23)
 
 # Enable Hot Reload for MSVC compilers if supported.
@@ -27,11 +26,12 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 find_package(SDL3 REQUIRED)
 # add_subdirectory(vendored/glm EXCLUDE_FROM_ALL)
 find_package(glm CONFIG REQUIRED)
-add_subdirectory(vendored/tinyobjloader EXCLUDE_FROM_ALL)
 # find_package(tinyobjloader REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 # SDL_image (used for loading various image formats)
-set(SDLIMAGE_VENDORED ON)
+# set(SDLIMAGE_VENDORED ON)
+set(SDLIMAGE_VENDORED OFF)
 set(SDLIMAGE_AVIF OFF)	# disable formats we don't use to make the build faster and smaller.
 set(SDLIMAGE_BMP OFF)
 set(SDLIMAGE_JPEG OFF)
@@ -56,6 +56,5 @@ target_link_libraries(${EXECUTABLE_NAME} PUBLIC
     SDL3::SDL3              # If using satelite libraries, SDL must be the last item in the list. 
     glm::glm-header-only
     SDL3_image::SDL3_image
-    tinyobjloader
+    nlohmann_json::nlohmann_json
 )
-

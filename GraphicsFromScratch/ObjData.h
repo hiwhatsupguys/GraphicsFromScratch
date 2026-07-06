@@ -1,7 +1,7 @@
 #pragma once
 #include <SDL3/SDL.h>
 #define TINYOBJLOADER_IMPLEMENTATION // define this in only *one* .cc
-#include <tiny_obj_loader.h>
+#include "tiny_obj_loader.h"
 #include "Vertex.h"
 #include <glm/glm.hpp>
 #include <stdexcept>
