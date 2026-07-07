@@ -129,6 +129,7 @@ Uint64 lastFPSCheckTime = 0;
 Uint64 numFPSChecksInInterval = 0;
 
 float rotation;
+bool isRotating = true;
 
 // radians per second
 constexpr float ROTATION_SPEED = SDL_PI_F / 4.0f;
@@ -700,6 +701,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
  * occurs. */
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
+    ImGui_ImplSDL3_ProcessEvent(event);
 
     switch (event->type) {
     case SDL_EVENT_QUIT:
@@ -736,7 +738,10 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     }
     break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    SDL_SetWindowRelativeMouseMode(window, true);
+    if (event->button.button == SDL_BUTTON_LEFT) {
+        if (!io->WantCaptureMouse)
+            SDL_SetWindowRelativeMouseMode(window, true);
+    }
     break;
 
     case SDL_EVENT_MOUSE_MOTION:
@@ -808,25 +813,41 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     deltaTime = static_cast<float>(currentTime - previousTime) / static_cast<float>(SDL_GetPerformanceFrequency());
     previousTime = currentTime;
 
-    float fps = 1.0f / deltaTime;
-    fpsSum += fps;
-    numFPSChecksInInterval++;
+    //float fps = 1.0f / deltaTime;
+    //fpsSum += fps;
+    //numFPSChecksInInterval++;
 
-    //SDL_Log("seconds since last fps check: %f", static_cast<float>(currentTime - lastFPSCheckTime) / static_cast<float>(SDL_GetPerformanceFrequency()));
-    if (currentTime - lastFPSCheckTime > COUNTS_PER_FPS_CHECK) {
-        averageFPSOverCheckInterval = fpsSum / numFPSChecksInInterval;
+    ////SDL_Log("seconds since last fps check: %f", static_cast<float>(currentTime - lastFPSCheckTime) / static_cast<float>(SDL_GetPerformanceFrequency()));
+    //if (currentTime - lastFPSCheckTime > COUNTS_PER_FPS_CHECK) {
+    //    averageFPSOverCheckInterval = fpsSum / numFPSChecksInInterval;
 
-        numFPSChecksInInterval = 0;
-        fpsSum = 0.0f;
-        lastFPSCheckTime = currentTime;
-        SDL_Log("average FPS over %.1f second(s): %.1f", SECONDS_PER_FPS_CHECK, averageFPSOverCheckInterval);
-    }
+    //    numFPSChecksInInterval = 0;
+    //    fpsSum = 0.0f;
+    //    lastFPSCheckTime = currentTime;
+    //    SDL_Log("average FPS over %.1f second(s): %.1f", SECONDS_PER_FPS_CHECK, averageFPSOverCheckInterval);
+    //}
 
     updateCamera(deltaTime);
 
     // rotation += deltaTime: 1 radian per second
     // want: pi radians per second
-    rotation += ROTATION_SPEED * deltaTime;
+    rotation += isRotating ? ROTATION_SPEED * deltaTime : 0.0f;
+
+    // create matrices so the gpu can use them to transform the vertices to
+    // go on the screen where they belong
+    glm::mat4 projectionMatrix =
+        glm::perspective(glm::radians(70.0f), aspectRatio, 0.01f, 1000.0f);
+    // glm::mat4 viewMatrix =
+    //     glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -3.0f));
+    glm::mat4 viewMatrix = glm::lookAt(camera.position, camera.target,
+        glm::vec3{ 0.0f, 1.0f, 0.0f });
+
+    // rotation matrix
+    glm::mat4 modelMatrix =
+        glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // calculate mvp matrix to send to the vertex shader
+    matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
 
     // Start the Dear ImGui frame
     ImGui_ImplSDLGPU3_NewFrame();
@@ -835,28 +856,29 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
 
     // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-    if (show_demo_window)
-        ImGui::ShowDemoWindow(&show_demo_window);
+    //if (show_demo_window)
+    //    ImGui::ShowDemoWindow(&show_demo_window);
 
 
     // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
     {
-        static float f = 0.0f;
-        static int counter = 0;
+        //static float f = 0.0f;
+        //static int counter = 0;
 
         ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
 
-        ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-        ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-        ImGui::Checkbox("Another Window", &show_another_window);
+        //ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+        //ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
+        //ImGui::Checkbox("Another Window", &show_another_window);
+        ImGui::Checkbox("Rotate Model", &isRotating);
 
-        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+        //ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
         ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
 
-        if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-            counter++;
-        ImGui::SameLine();
-        ImGui::Text("counter = %d", counter);
+        //if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+        //    counter++;
+        //ImGui::SameLine();
+        //ImGui::Text("counter = %d", counter);
 
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io->Framerate, io->Framerate);
         ImGui::End();
@@ -910,18 +932,18 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // CREATE COLOR TARGET
 
     // color target: where to draw the things
-    SDL_GPUColorTargetInfo colorTargetInfo{};
+    SDL_GPUColorTargetInfo colorTargetInfo{
+        .texture = swapchainTexture,
+        // replace previous color, clear (screen?) with color
+        .clear_color = SDL_FColor{clear_color.x, clear_color.y, clear_color.z, clear_color.w},
+        //colorTargetInfo.clear_color =
+        //    SDL_FColor{0x71 / 255.0f, 0x79 / 255.0f, 0x7E / 255.0f, 255 / 255.0f},
+        // discard previous content
+        .load_op = SDL_GPU_LOADOP_CLEAR, // or SDL_GPU_LOADOP_LOAD to
+        // keep the previous content
+        .store_op = SDL_GPU_STOREOP_STORE, // store content to texture
+    };
 
-    // replace previous color, clear (screen?) with color
-    colorTargetInfo.clear_color = { 0.0f, 0.2f, 0.4f };
-    //colorTargetInfo.clear_color =
-    //    SDL_FColor{0x71 / 255.0f, 0x79 / 255.0f, 0x7E / 255.0f, 255 / 255.0f};
-    // discard previous content
-    colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR; // or SDL_GPU_LOADOP_LOAD to
-    // keep the previous content
-    colorTargetInfo.store_op =
-        SDL_GPU_STOREOP_STORE; // store content to texture
-    colorTargetInfo.texture = swapchainTexture;
 
     SDL_GPUDepthStencilTargetInfo depthStencilTargetInfo{
         .texture = depthTexture,
@@ -930,14 +952,12 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         .store_op = SDL_GPU_STOREOP_DONT_CARE,
     };
 
-    ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, commandBuffer);
 
     // BEGIN RENDER PASS
 
     // color_target_infos: array of render targets, lets you render multiple
     // at the same time num_color_targets: size of array
-    SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(
-        commandBuffer, &colorTargetInfo, 1, &depthStencilTargetInfo);
+    SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, &depthStencilTargetInfo);
 
 
     // bind the graphics pipeline
@@ -954,8 +974,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         .buffer = model.indexBuffer,
         .offset = 0,
     };
-    SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding,
-        SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
     SDL_GPUTextureSamplerBinding textureSamplerBinding{
         .texture = model.colormapTexture,
@@ -963,37 +982,38 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     };
     SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
 
-    // create matrices so the gpu can use them to transform the vertices to
-    // go on the screen where they belong
-    glm::mat4 projectionMatrix =
-        glm::perspective(glm::radians(70.0f), aspectRatio, 0.01f, 1000.0f);
-    // glm::mat4 viewMatrix =
-    //     glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -3.0f));
-    glm::mat4 viewMatrix = glm::lookAt(camera.position, camera.target,
-        glm::vec3{ 0.0f, 1.0f, 0.0f });
-
-    // rotation matrix
-    glm::mat4 modelMatrix =
-        glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 1.0f, 0.0f));
-
-    // calculate mvp matrix to send to the vertex shader
-    matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
 
     // push vertex uniform data so the gpu can perform the matrix
     // multiplication
-    SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform,
-        sizeof(matrixUniform));
+    SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform, sizeof(matrixUniform));
 
     // fragment shader uniforms
     // SDL_PushGPUFragmentUniformData();
 
     SDL_DrawGPUIndexedPrimitives(renderPass, model.numIndices, 1, 0, 0, 0);
 
-    ImGui_ImplSDLGPU3_RenderDrawData(draw_data, commandBuffer, renderPass);
 
     // END RENDER PASS
 
     SDL_EndGPURenderPass(renderPass);
+
+    // BEGIN IMGUI SETUP
+
+    ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, commandBuffer);
+
+    SDL_GPUColorTargetInfo imColorTargetInfo{
+        .texture = swapchainTexture,
+        .load_op = SDL_GPU_LOADOP_LOAD, 
+        .store_op = SDL_GPU_STOREOP_STORE, 
+    };
+
+    // BEGIN IMGUI RENDER PASS
+    SDL_GPURenderPass* imRenderPass = SDL_BeginGPURenderPass(commandBuffer, &imColorTargetInfo, 1, nullptr);
+
+    ImGui_ImplSDLGPU3_RenderDrawData(draw_data, commandBuffer, imRenderPass);
+
+    // END IMGUI RENDER PASS
+    SDL_EndGPURenderPass(imRenderPass);
 
     // do now
     SDL_SubmitGPUCommandBuffer(commandBuffer);
