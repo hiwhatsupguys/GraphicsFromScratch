@@ -13,7 +13,7 @@ endif()
 
 project ("GraphicsFromScratch")
 
-set(EXECUTABLE_NAME ${PROJECT_NAME})
+set(EXECUTABLE_NAME main)
 
 
 # set the output directory for built objects.
@@ -26,12 +26,22 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 find_package(SDL3 REQUIRED)
 # add_subdirectory(vendored/glm EXCLUDE_FROM_ALL)
 find_package(glm CONFIG REQUIRED)
-# find_package(tinyobjloader REQUIRED)
 find_package(nlohmann_json REQUIRED)
+# find_package(SDL3_ttf REQUIRED)
+
+set(IMGUI_PATH  "/repos/imgui")
+set(IMGUI_BACKENDS_PATH  ${IMGUI_PATH}/backends)
+file(GLOB IMGUI_SOURCES ${IMGUI_PATH}/*.cpp ${IMGUI_BACKENDS_PATH}/imgui_impl_sdlgpu3.cpp ${IMGUI_BACKENDS_PATH}/imgui_impl_sdl3.cpp)
+add_library(ImGui STATIC ${IMGUI_SOURCES})
+target_include_directories(ImGui PUBLIC ${IMGUI_PATH} ${IMGUI_BACKENDS_PATH})
+target_link_libraries(ImGui PUBLIC 
+    SDL3::SDL3
+)
 
 # SDL_image (used for loading various image formats)
-# set(SDLIMAGE_VENDORED ON)
-set(SDLIMAGE_VENDORED OFF)
+# # set(SDLIMAGE_VENDORED ON)
+
+# set(SDLIMAGE_VENDORED OFF)
 set(SDLIMAGE_AVIF OFF)	# disable formats we don't use to make the build faster and smaller.
 set(SDLIMAGE_BMP OFF)
 set(SDLIMAGE_JPEG OFF)
@@ -42,19 +52,3 @@ find_package(SDL3_image REQUIRED)
 # Include sub-projects.
 add_subdirectory ("GraphicsFromScratch")
 
-target_include_directories(${EXECUTABLE_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME})
-
-target_compile_definitions(${EXECUTABLE_NAME} PUBLIC SDL_MAIN_USE_CALLBACKS)
-
-
-
-# Link SDL to our executable. This also makes its include directory available to us. 
-target_link_libraries(${EXECUTABLE_NAME} PUBLIC 
-#	SDL3_ttf::SDL3_ttf      # remove if you are not using SDL_ttf
-#	SDL3_mixer::SDL3_mixer  # remove if you are not using SDL_mixer
-#	SDL3_image::SDL3_image	# remove if you are not using SDL_image
-    SDL3::SDL3              # If using satelite libraries, SDL must be the last item in the list. 
-    glm::glm-header-only
-    SDL3_image::SDL3_image
-    nlohmann_json::nlohmann_json
-)

@@ -22,6 +22,7 @@
 #include <glm/gtx/euler_angles.hpp>
 
 #include <string>
+#include <cmath>
 #include <ios>
 #include <iterator>
 #include <fstream>
@@ -29,6 +30,10 @@
 #include <vector>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
+#include <imgui.h>
+#include <imgui_impl_sdlgpu3.h>
+#include <imgui_impl_sdl3.h>
+
 using json = nlohmann::json;
 
 
@@ -58,15 +63,54 @@ struct Camera {
 };
 Camera camera;
 
-struct Look {
-    float yaw;
-    float pitch;
-};
-Look look{0.0f, 0.0f};
+
+// https://www.youtube.com/watch?v=Lw8LPXPyrl0
+//template<typename T>
+//struct Interpolated {
+//    T start{};
+//    T end{};
+//    float startTime{};
+//    float speed = 8.0f;
+//
+//    Interpolated(T const& initialValue = {}) : start{ initialValue }, end{ start } {}
+//    static float getCurrentTime() { return static_cast<float>(SDL_GetPerformanceCounter() / static_cast<float>(SDL_GetPerformanceFrequency())); }
+//    float getElapsedSeconds() const { return getCurrentTime() - startTime; }
+//    void setValue(T const &newValue) {
+//        start = getValue();
+//        end = newValue;
+//        startTime = getCurrentTime();
+//    }
+//    T getValue() const {
+//        const float elapsed = getElapsedSeconds();
+//        float t = elapsed;
+//        t *= speed;
+//
+//        // easings.net
+//
+//
+//        if (t >= 1.0f)
+//            return end;
+//
+//        // lerp
+//        return start + (end - start) * t;
+//    }
+//
+//    void setDuration(float duration) {
+//        speed = 1.0f / duration;
+//    
+//    }
+//
+//    operator T() const {
+//        return getValue();
+//    }
+//    void operator=(T const& newValue) {
+//        setValue(newValue);
+//    }
+//};
 
 glm::vec2 mouseVelocityVector{0.0f, 0.0f};
-// constexpr float MOUSE_SENSITIVITY = 0.002f;
-constexpr float MOUSE_SENSITIVITY = 0.01f;
+ constexpr float MOUSE_SENSITIVITY = 0.002f;
+//constexpr float MOUSE_SENSITIVITY = 0.01f;
 
 // units per second
 constexpr float CAMERA_SPEED = 5.0f;
@@ -76,10 +120,29 @@ Uint64 previousTime;
 // deltaTime in seconds
 float deltaTime;
 
+constexpr float SECONDS_PER_FPS_CHECK = 1.0f;
+const Uint64 COUNTS_PER_FPS_CHECK = SECONDS_PER_FPS_CHECK * SDL_GetPerformanceFrequency();
+float averageFPSOverCheckInterval = 0.0f;
+float fpsSum = 0.0f;
+Uint64 lastFPSCheckTime = 0;
+Uint64 numFPSChecksInInterval = 0;
+
 float rotation;
 
 // radians per second
 constexpr float ROTATION_SPEED = SDL_PI_F / 4.0f;
+
+//struct Look {
+//    float yaw;
+//    float pitch;
+//};
+
+typedef glm::vec2 Look;
+Look look{ 0.0f, 0.0f };
+
+// pitch, yaw
+//typedef glm::vec2 Look;
+// Interpolated<Look> look{ Look{0.0f, 0.0f} };
 
 bool cameraUpPressed;
 bool cameraDownPressed;
@@ -255,6 +318,9 @@ void init() {
     SDL_Log("Base path: %s", BASE_PATH.c_str());
 
     SDL_ClaimWindowForGPUDevice(device, window);
+
+    //SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, SDL_GPU_PRESENTMODE_VSYNC);
+    SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, SDL_GPU_PRESENTMODE_IMMEDIATE);
 
     // SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
     depthTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -520,18 +586,26 @@ void updateCamera(float deltaTime) {
     // need to convert two angles (from mouse cumulative movement) to x, y,
     // and z on screen relative to camera position x: yaw, y: pitch
 
-    // wrap angle
-    look.yaw = SDL_fmodf(look.yaw - mouseVelocityVector.x * MOUSE_SENSITIVITY,
-                         2.0f * SDL_PI_F);
-    // clamp to -90, 90
-    look.pitch =
-        SDL_clamp(look.pitch - mouseVelocityVector.y * MOUSE_SENSITIVITY,
-                  glm::radians(-89.0f), glm::radians(89.0f));
 
-    // SDL_Log("%f, %f", look.yaw, look.pitch);
+    // only changes look's start and end values if the mouse moved
+    if (mouseVelocityVector.x != 0.0f || mouseVelocityVector.y != 0.0f) {
+
+        // wrap angle (yaw)
+        look.x = SDL_fmodf(look.x - mouseVelocityVector.x * MOUSE_SENSITIVITY,
+                             2.0f * SDL_PI_F);
+        // clamp to -90, 90 (pitch)
+        look.y =
+            SDL_clamp(look.y - mouseVelocityVector.y * MOUSE_SENSITIVITY,
+                      glm::radians(-89.0f), glm::radians(89.0f));
+
+         //SDL_Log("%f, %f", look.yaw, look.pitch);
+    }
+
+    //glm::mat3 yawPitchRollMatrix =
+    //    glm::yawPitchRoll(look.getValue().x, look.getValue().y, 0.0f);
 
     glm::mat3 yawPitchRollMatrix =
-        glm::yawPitchRoll(look.yaw, look.pitch, 0.0f);
+        glm::yawPitchRoll(look.x, look.y, 0.0f);
 
     // glm::vec3 lookDirection{SDL_sinf(look.yaw), 0.0f,
     // SDL_cosf(look.yaw)};
@@ -543,7 +617,7 @@ void updateCamera(float deltaTime) {
     movementDirection.y = yInput;
 
     // normalize vector
-    if (movementDirection.x + movementDirection.y + movementDirection.z != 0.0f)
+    if (movementDirection != glm::zero<glm::vec3>())
         movementDirection = glm::normalize(movementDirection);
 
     // deltatimeify
@@ -565,7 +639,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     setupPipeline();
     model = loadModel(MESH_PATH, MODEL_PATH);
 
-    currentTime = SDL_GetTicksNS();
+    currentTime = SDL_GetPerformanceCounter();
     previousTime = currentTime;
 
     return SDL_APP_CONTINUE;
@@ -574,6 +648,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 /* This function runs when a new event (mouse input, keypresses, etc)
  * occurs. */
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
+
 
     switch (event->type) {
     case SDL_EVENT_QUIT:
@@ -614,9 +689,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
         break;
 
     case SDL_EVENT_MOUSE_MOTION:
-        if (SDL_GetWindowRelativeMouseMode(window))
-            mouseVelocityVector = {event->motion.xrel, event->motion.yrel};
-        // SDL_Log("%f, %f", mouseVelocityVector.x, mouseVelocityVector.y);
+        if (SDL_GetWindowRelativeMouseMode(window)) {
+            mouseVelocityVector += glm::vec2{ event->motion.xrel, event->motion.yrel };
+        } 
         break;
 
     case SDL_EVENT_KEY_DOWN:
@@ -675,17 +750,28 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 /* This function runs once per frame, and is the heart of the program. */
 SDL_AppResult SDL_AppIterate(void *appstate) {
 
-    currentTime = SDL_GetTicksNS();
-    deltaTime = (currentTime - previousTime) / 1e9f;
+    currentTime = SDL_GetPerformanceCounter();
+    deltaTime = static_cast<float>(currentTime - previousTime) / static_cast<float>(SDL_GetPerformanceFrequency());
     // rotation += deltaTime: 1 radian per second
     // want: pi radians per second
     rotation += ROTATION_SPEED * deltaTime;
 
-    //float fps = 1.0f / deltaTime;
-    //SDL_Log("FPS: %f", fps);
+    float fps = 1.0f / deltaTime;
+    fpsSum += fps;
+    numFPSChecksInInterval++;
+
+    //SDL_Log("seconds since last fps check: %f", static_cast<float>(currentTime - lastFPSCheckTime) / static_cast<float>(SDL_GetPerformanceFrequency()));
+    if (currentTime - lastFPSCheckTime > COUNTS_PER_FPS_CHECK) {
+        averageFPSOverCheckInterval = fpsSum / numFPSChecksInInterval;
+
+        numFPSChecksInInterval = 0;
+        fpsSum = 0.0f;
+        lastFPSCheckTime = currentTime;
+        SDL_Log("average FPS over %.1f second(s): %.1f", SECONDS_PER_FPS_CHECK, averageFPSOverCheckInterval);
+    }
+
 
     updateCamera(deltaTime);
-    mouseVelocityVector = {0.0f, 0.0f};
 
     previousTime = currentTime;
 
@@ -802,6 +888,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     // do now
     SDL_SubmitGPUCommandBuffer(commandBuffer);
+
+    mouseVelocityVector = { 0.0f, 0.0f };
 
     return SDL_APP_CONTINUE;
 }
