@@ -36,7 +36,7 @@ add_custom_target(copy_resources ALL
 )
 
 # copy resources depends on compile shaders to run
-# add_dependencies(${EXECUTABLE_NAME} copy_resources compile_shaders)
+add_dependencies(${EXECUTABLE_NAME} copy_resources compile_shaders)
 
 # On Windows: copy SDL runtime DLLs next to the executable so the loader can find them.
 # The executable target is created in this directory, so attach the POST_BUILD command here.
