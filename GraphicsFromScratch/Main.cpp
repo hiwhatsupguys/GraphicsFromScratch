@@ -22,6 +22,7 @@
 #include <glm/gtx/euler_angles.hpp>
 
 #include <string>
+#include <array>
 #include <cmath>
 #include <ios>
 #include <iterator>
@@ -46,8 +47,7 @@ SDL_GPUDevice* device;
 // blending
 SDL_GPUGraphicsPipeline* fillPipeline;
 SDL_GPUTexture* depthTexture;
-SDL_GPUTextureCreateInfo
-depthTextureCreateInfo{}; // for updating width and height later
+SDL_GPUTextureCreateInfo depthTextureCreateInfo{}; // for updating width and height later
 
 constexpr SDL_GPUTextureFormat DEPTH_TEXTURE_FORMAT =
 // SDL_GPU_TEXTUREFORMAT_D16_UNORM;
@@ -65,49 +65,6 @@ Camera camera;
 
 
 
-// https://www.youtube.com/watch?v=Lw8LPXPyrl0
-//template<typename T>
-//struct Interpolated {
-//    T start{};
-//    T end{};
-//    float startTime{};
-//    float speed = 8.0f;
-//
-//    Interpolated(T const& initialValue = {}) : start{ initialValue }, end{ start } {}
-//    static float getCurrentTime() { return static_cast<float>(SDL_GetPerformanceCounter() / static_cast<float>(SDL_GetPerformanceFrequency())); }
-//    float getElapsedSeconds() const { return getCurrentTime() - startTime; }
-//    void setValue(T const &newValue) {
-//        start = getValue();
-//        end = newValue;
-//        startTime = getCurrentTime();
-//    }
-//    T getValue() const {
-//        const float elapsed = getElapsedSeconds();
-//        float t = elapsed;
-//        t *= speed;
-//
-//        // easings.net
-//
-//
-//        if (t >= 1.0f)
-//            return end;
-//
-//        // lerp
-//        return start + (end - start) * t;
-//    }
-//
-//    void setDuration(float duration) {
-//        speed = 1.0f / duration;
-//    
-//    }
-//
-//    operator T() const {
-//        return getValue();
-//    }
-//    void operator=(T const& newValue) {
-//        setValue(newValue);
-//    }
-//};
 
 glm::vec2 mouseVelocityVector{ 0.0f, 0.0f };
 constexpr float MOUSE_SENSITIVITY = 0.002f;
@@ -215,7 +172,7 @@ ShaderInfo loadShaderInfoFromJson(const std::string& shaderFilename) {
     std::string jsonFilePath = COMPILED_SHADER_PATH + "/JSON/" + shaderFilename + ".json";
     std::ifstream jsonFile{ jsonFilePath };
     if (!jsonFile) {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "json file not found :(");
+        SDL_Log("json file not found :(");
         std::exit(1);
     }
     json data = json::parse(jsonFile);
@@ -240,7 +197,7 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const std::string& shaderFilena
     else if (shaderFilename.contains(".frag"))
         stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
     else {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid shader stage!");
+        SDL_Log("Invalid shader stage!");
         std::exit(1);
         return nullptr;
     }
@@ -272,7 +229,7 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const std::string& shaderFilena
 
     }
     else {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Unrecognized backend shader format!");
+        SDL_Log("Unrecognized backend shader format!");
         std::exit(1);
         return nullptr;
     }
@@ -285,20 +242,21 @@ SDL_GPUShader* LoadShader(SDL_GPUDevice* device, const std::string& shaderFilena
 
     std::vector<Uint8> code{ std::istreambuf_iterator(shaderFile), {} };
 
-    SDL_GPUShaderCreateInfo shaderInfo{};
-    shaderInfo.code = (Uint8*)code.data();
-    shaderInfo.code_size = code.size();
-    shaderInfo.entrypoint = entrypoint;
-    shaderInfo.format = format;
-    shaderInfo.stage = stage;
-    shaderInfo.num_samplers = info.samplers;
-    shaderInfo.num_storage_textures = info.storageTextures;
-    shaderInfo.num_storage_buffers = info.storageBuffers;
-    shaderInfo.num_uniform_buffers = info.uniformBuffers;
+    SDL_GPUShaderCreateInfo shaderInfo{
+        .code_size = code.size(),
+        .code = (Uint8*)code.data(),
+        .entrypoint = entrypoint,
+        .format = format,
+        .stage = stage,
+        .num_samplers = info.samplers,
+        .num_storage_textures = info.storageTextures,
+        .num_storage_buffers = info.storageBuffers,
+        .num_uniform_buffers = info.uniformBuffers
+    };
     SDL_GPUShader* shader = SDL_CreateGPUShader(device, &shaderInfo);
 
     if (shader == nullptr) {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create shader!");
+        SDL_Log("Failed to create shader!: %s", SDL_GetError());
         std::exit(1);
     }
 
@@ -320,6 +278,12 @@ void initImGui() {
 
     // Setup Scaling
     ImGuiStyle& style = ImGui::GetStyle();
+    for (ImVec4 &color : style.Colors) {
+        // apply gamma correction
+        color.x = glm::pow(color.x, 2.2f);
+        color.y = glm::pow(color.y, 2.2f);
+        color.z = glm::pow(color.z, 2.2f);
+    }
     style.ScaleAllSizes(mainScale);
     style.FontScaleDpi = mainScale;
 
@@ -366,17 +330,31 @@ void init() {
     SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, SDL_GPU_PRESENTMODE_IMMEDIATE);
 
 
-    // SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
-    depthTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    depthTextureCreateInfo.format = DEPTH_TEXTURE_FORMAT;
+    depthTextureCreateInfo = {
+        .type = SDL_GPU_TEXTURETYPE_2D,
+        .format = DEPTH_TEXTURE_FORMAT,
+        .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
 
-    // WILL CAUSE PROBLEMS DUE TO RESIZING (not anymore we just update it on
-    // window resize)
-    depthTextureCreateInfo.width = windowWidth;
-    depthTextureCreateInfo.height = windowHeight;
-    depthTextureCreateInfo.layer_count_or_depth = 1;
-    depthTextureCreateInfo.num_levels = 1;
-    depthTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+        //// WILL CAUSE PROBLEMS DUE TO RESIZING (not anymore we just update it on
+        //// window resize)
+        .width = static_cast<Uint32>(windowWidth),
+        .height = static_cast<Uint32>(windowHeight),
+        .layer_count_or_depth = 1,
+        .num_levels = 1,
+    };
+
+    //// SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
+    //depthTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+    //depthTextureCreateInfo.format = DEPTH_TEXTURE_FORMAT;
+
+    //// WILL CAUSE PROBLEMS DUE TO RESIZING (not anymore we just update it on
+    //// window resize)
+    //depthTextureCreateInfo.width = windowWidth;
+    //depthTextureCreateInfo.height = windowHeight;
+    //depthTextureCreateInfo.layer_count_or_depth = 1;
+    //depthTextureCreateInfo.num_levels = 1;
+    //depthTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+
     depthTexture = SDL_CreateGPUTexture(device, &depthTextureCreateInfo);
     SDL_SetGPUTextureName(device, depthTexture, "Depth Texture");
 
@@ -391,7 +369,7 @@ void setupPipeline() {
     // KEEP IN MIND THE UNIFORM BUFFER COUNT
     SDL_GPUShader* vertexShader = LoadShader(device, "PositionColorTexturePerspective.vert");
     if (!vertexShader) {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "vertex shader failed ;(");
+        SDL_Log("vertex shader failed ;(: %s", SDL_GetError());
         std::exit(1);
     }
 
@@ -401,63 +379,73 @@ void setupPipeline() {
     // SDL_GPUShader *fragmentShader =
     //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "fragment shader failed ;(");
+        SDL_Log("fragment shader failed ;(: %s", SDL_GetError());
         std::exit(1);
     }
 
-    SDL_GPUColorTargetDescription colorTargetDescriptions[1];
-    colorTargetDescriptions[0] = {};
-    colorTargetDescriptions[0].format =
-        SDL_GetGPUSwapchainTextureFormat(device, window);
+    std::array<SDL_GPUColorTargetDescription, 1> colorTargetDescriptions{ {
+        {
+        .format = SDL_GetGPUSwapchainTextureFormat(device, window),
+        .blend_state = {},
+        }
+    } };
 
     SDL_GPUGraphicsPipelineTargetInfo targetInfo{
-        .color_target_descriptions = colorTargetDescriptions,
-        .num_color_targets = 1,
+        .color_target_descriptions = colorTargetDescriptions.data(),
+        .num_color_targets = colorTargetDescriptions.size(),
         .depth_stencil_format = DEPTH_TEXTURE_FORMAT,
         .has_depth_stencil_target = true,
     };
 
     // describe the vertex buffers
-    SDL_GPUVertexBufferDescription vertexBufferDescriptions[1];
-    // slot, pitch, input_rate, instance_step_rate
-    vertexBufferDescriptions[0].slot = 0; // vertex buffer set to slot 0
-    vertexBufferDescriptions[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-    vertexBufferDescriptions[0].instance_step_rate = 0;
-    vertexBufferDescriptions[0].pitch =
-        sizeof(Vertex); // how many bytes to jump after each cycle
+    std::array<SDL_GPUVertexBufferDescription, 1> vertexBufferDescriptions{ {
+        {
+            // slot, pitch, input_rate, instance_step_rate
+            .slot = 0, // vertex buffer set to slot 0
+            .pitch =
+                sizeof(Vertex), // how many bytes to jump after each cycle
+            .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
+            .instance_step_rate = 0,
+        }
+    } };
 
-    SDL_GPUVertexAttribute vertexAttributes[3];
+
     // location, buffer_slot, format, offset
     // location: float3 Position in Input in PositionColor.vert
     // buffer_slot: 0 for Input
     // format: float3 Position
     // offset: how many bytes over from the start of Input
-    vertexAttributes[0] =
-        SDL_GPUVertexAttribute{ 0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
-                               offsetof(Vertex, Vertex::position) };
-    vertexAttributes[1] =
-        SDL_GPUVertexAttribute{ 1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
-                               offsetof(Vertex, Vertex::color) };
-    vertexAttributes[2] = SDL_GPUVertexAttribute{
-        2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(Vertex, Vertex::uv) };
-
-    SDL_GPUVertexInputState vertexInputState{
-        .vertex_buffer_descriptions = vertexBufferDescriptions,
-        .num_vertex_buffers = 1,
-        .vertex_attributes = vertexAttributes,
-        .num_vertex_attributes = SDL_arraysize(vertexAttributes),
-    };
-
-    SDL_GPUDepthStencilState depthStencil{};
-    depthStencil.enable_depth_test = true;
-    depthStencil.enable_depth_write = true;
-    depthStencil.compare_op = SDL_GPU_COMPAREOP_LESS;
+    std::array<SDL_GPUVertexAttribute, 3> vertexAttributes{{
+        {
+            .location = 0,
+            .buffer_slot = 0,
+            .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+            .offset = offsetof(Vertex, position),
+        },
+        {
+            .location = 1,
+            .buffer_slot = 0,
+            .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
+            .offset = offsetof(Vertex, color),
+        },
+        {
+            .location = 2,
+            .buffer_slot = 0,
+            .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+            .offset = offsetof(Vertex, uv),
+        },
+    }};
 
     // MAKE PIPELINE
     SDL_GPUGraphicsPipelineCreateInfo pipelineInfo{
         .vertex_shader = vertexShader,
         .fragment_shader = fragmentShader,
-        .vertex_input_state = vertexInputState,
+        .vertex_input_state = {
+            .vertex_buffer_descriptions = vertexBufferDescriptions.data(),
+            .num_vertex_buffers = vertexBufferDescriptions.size(),
+            .vertex_attributes = vertexAttributes.data(),
+            .num_vertex_attributes = vertexAttributes.size(),
+        },
         .primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
         .rasterizer_state = {
             //.fill_mode = SDL_GPU_FILLMODE_FILL,
@@ -465,14 +453,17 @@ void setupPipeline() {
             .cull_mode = SDL_GPU_CULLMODE_BACK,
         },
         .multisample_state = {},
-        .depth_stencil_state = depthStencil,
+        .depth_stencil_state = {
+            .compare_op = SDL_GPU_COMPAREOP_LESS,
+            .enable_depth_test = true,
+            .enable_depth_write = true,
+        },
         .target_info = targetInfo,
     };
 
     fillPipeline = SDL_CreateGPUGraphicsPipeline(device, &pipelineInfo);
     if (!fillPipeline) {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create graphics pipeline, error: %s",
-            SDL_GetError());
+        SDL_Log("Failed to create graphics pipeline, error: %s", SDL_GetError());
         std::exit(1);
     }
 
@@ -507,7 +498,7 @@ Model loadModel(const char* meshPath, const char* modelPath) {
     imageDataSurface =
         SDL_ConvertSurface(imageDataSurface, SDL_PIXELFORMAT_ABGR8888);
     if (!imageDataSurface) {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "image load failed ;(");
+        SDL_Log("image load failed ;(: %s", SDL_GetError());
         std::exit(1);
         // return SDL_APP_FAILURE;
     }
@@ -584,14 +575,16 @@ Model loadModel(const char* meshPath, const char* modelPath) {
 
     SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
 
-    SDL_GPUTransferBufferLocation transferBufferLocation{};
-    transferBufferLocation.transfer_buffer = transferBuffer;
-    transferBufferLocation.offset = 0;
+    SDL_GPUTransferBufferLocation transferBufferLocation{
+        .transfer_buffer = transferBuffer,
+        .offset = 0,
+    };
 
-    SDL_GPUBufferRegion bufferRegion{};
-    bufferRegion.buffer = vertexBuffer;
-    bufferRegion.offset = 0;
-    bufferRegion.size = vertexBufferCreateInfo.size;
+    SDL_GPUBufferRegion bufferRegion{
+        .buffer = vertexBuffer,
+        .offset = 0,
+        .size = vertexBufferCreateInfo.size,
+    };
     SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
         false);
 
@@ -599,17 +592,21 @@ Model loadModel(const char* meshPath, const char* modelPath) {
     bufferRegion.buffer = indexBuffer;
     bufferRegion.size = indexBufferCreateInfo.size;
     bufferRegion.offset = 0;
+
     SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
         false);
 
-    SDL_GPUTextureTransferInfo textureTransferInfo{};
-    textureTransferInfo.transfer_buffer = textureTransferBuffer;
-    textureTransferInfo.offset = 0;
-    SDL_GPUTextureRegion textureRegion{};
-    textureRegion.texture = colormapTexture;
-    textureRegion.w = imageDataSurface->w;
-    textureRegion.h = imageDataSurface->h;
-    textureRegion.d = 1;
+    SDL_GPUTextureTransferInfo textureTransferInfo{
+        .transfer_buffer = textureTransferBuffer,
+        .offset = 0,
+    };
+
+    SDL_GPUTextureRegion textureRegion{
+        .texture = colormapTexture,
+        .w = static_cast<Uint32>(imageDataSurface->w),
+        .h = static_cast<Uint32>(imageDataSurface->h),
+        .d = 1,
+    };
     SDL_UploadToGPUTexture(copyPass, &textureTransferInfo, &textureRegion,
         false);
 
@@ -715,7 +712,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     SDL_ReleaseGPUTexture(device, depthTexture);
     // get new width and height
     if (!SDL_GetWindowSize(window, &windowWidth, &windowHeight)) {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Couldn't get window size :(");
+        SDL_Log("Couldn't get window size :(: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
@@ -731,9 +728,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
     if (!depthTexture) {
 
-        SDL_LogError(
-            SDL_LOG_CATEGORY_ERROR,
-            "Couldn't recreate depth texture after window resize ;(");
+        SDL_Log("Couldn't recreate depth texture after window resize ;(: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
     break;
@@ -774,7 +769,10 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     SDL_SetWindowRelativeMouseMode(window, false);
     break;
     case SDLK_F11:
-    SDL_SetWindowFullscreen(window, !SDL_GetWindowFullscreenMode(window));
+    // https://discourse.libsdl.org/t/how-to-check-if-a-window-is-fullscreen/35246/2
+    bool isFullscreen = SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN;
+    SDL_SetWindowFullscreen(window, !isFullscreen);
+    //SDL_Log("Fullscreen mode toggled to %d", SDL_GetWindowFullscreenMode(window));
     break;
     }
     break;
@@ -1043,3 +1041,47 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     SDL_DestroyGPUDevice(device);
     SDL_DestroyWindow(window);
 }
+
+// https://www.youtube.com/watch?v=Lw8LPXPyrl0
+//template<typename T>
+//struct Interpolated {
+//    T start{};
+//    T end{};
+//    float startTime{};
+//    float speed = 8.0f;
+//
+//    Interpolated(T const& initialValue = {}) : start{ initialValue }, end{ start } {}
+//    static float getCurrentTime() { return static_cast<float>(SDL_GetPerformanceCounter() / static_cast<float>(SDL_GetPerformanceFrequency())); }
+//    float getElapsedSeconds() const { return getCurrentTime() - startTime; }
+//    void setValue(T const &newValue) {
+//        start = getValue();
+//        end = newValue;
+//        startTime = getCurrentTime();
+//    }
+//    T getValue() const {
+//        const float elapsed = getElapsedSeconds();
+//        float t = elapsed;
+//        t *= speed;
+//
+//        // easings.net
+//
+//
+//        if (t >= 1.0f)
+//            return end;
+//
+//        // lerp
+//        return start + (end - start) * t;
+//    }
+//
+//    void setDuration(float duration) {
+//        speed = 1.0f / duration;
+//    
+//    }
+//
+//    operator T() const {
+//        return getValue();
+//    }
+//    void operator=(T const& newValue) {
+//        setValue(newValue);
+//    }
+//};
