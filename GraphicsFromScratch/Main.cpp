@@ -37,37 +37,48 @@
 
 using json = nlohmann::json;
 
+struct Globals {
+    SDL_Window* window;
+    SDL_GPUDevice* device;
+    int windowWidth, windowHeight;
+    float aspectRatio;
 
-SDL_Window* window;
-int windowWidth, windowHeight;
-float aspectRatio;
+    // specifies which shaders to use, how many buffers, vertex inputs, color
+    // blending
+    SDL_GPUGraphicsPipeline* fillPipeline;
+    SDL_GPUTexture* depthTexture;
 
-SDL_GPUDevice* device;
-// specifies which shaders to use, how many buffers, vertex inputs, color
-// blending
-SDL_GPUGraphicsPipeline* fillPipeline;
-SDL_GPUTexture* depthTexture;
+    SDL_GPUTextureFormat depthTextureFormat;
+    // SDL_GPU_TEXTUREFORMAT_D16_UNORM;
+    // VVV ONLY WORKS FOR 4060
+    // SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+    //SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+
+    SDL_GPUTextureFormat swapchainTextureFormat;
+    SDL_GPUSampler* sampler;
+
+    struct Camera {
+        glm::vec3 position;
+        glm::vec3 target;
+    } camera;
+
+    typedef glm::vec2 Look;
+    Look look{ 0.0f, 0.0f };
+    glm::vec2 mouseVelocityVector{ 0.0f, 0.0f };
+};
+
+Globals globals;
+
 SDL_GPUTextureCreateInfo depthTextureCreateInfo{}; // for updating width and height later
 
-constexpr SDL_GPUTextureFormat DEPTH_TEXTURE_FORMAT =
-// SDL_GPU_TEXTUREFORMAT_D16_UNORM;
-// VVV ONLY WORKS FOR 4060
-// SDL_GPU_TEXTUREFORMAT_D24_UNORM;
-SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
-
-SDL_GPUSampler* sampler;
-
-struct Camera {
-    glm::vec3 position;
-    glm::vec3 target;
-};
-Camera camera;
 
 
 
 
-glm::vec2 mouseVelocityVector{ 0.0f, 0.0f };
-constexpr float MOUSE_SENSITIVITY = 0.002f;
+
+
+
+constexpr float MOUSE_SENSITIVITY = 0.001f;
 //constexpr float MOUSE_SENSITIVITY = 0.01f;
 
 // units per second
@@ -78,12 +89,12 @@ Uint64 previousTime;
 // deltaTime in seconds
 float deltaTime;
 
-constexpr float SECONDS_PER_FPS_CHECK = 1.0f;
-const Uint64 COUNTS_PER_FPS_CHECK = SECONDS_PER_FPS_CHECK * SDL_GetPerformanceFrequency();
-float averageFPSOverCheckInterval = 0.0f;
-float fpsSum = 0.0f;
-Uint64 lastFPSCheckTime = 0;
-Uint64 numFPSChecksInInterval = 0;
+//constexpr float SECONDS_PER_FPS_CHECK = 1.0f;
+//const Uint64 COUNTS_PER_FPS_CHECK = SECONDS_PER_FPS_CHECK * SDL_GetPerformanceFrequency();
+//float averageFPSOverCheckInterval = 0.0f;
+//float fpsSum = 0.0f;
+//Uint64 lastFPSCheckTime = 0;
+//Uint64 numFPSChecksInInterval = 0;
 
 float rotation;
 bool isRotating = true;
@@ -96,8 +107,6 @@ constexpr float ROTATION_SPEED = SDL_PI_F / 4.0f;
 //    float pitch;
 //};
 
-typedef glm::vec2 Look;
-Look look{ 0.0f, 0.0f };
 
 // pitch, yaw
 //typedef glm::vec2 Look;
@@ -167,6 +176,21 @@ constexpr glm::vec4 WHITE{ 1, 1, 1, 1 };
 // };
 //
 // Uint32 indices[6] = {0, 1, 2, 0, 2, 3};
+
+void tryDepthTextureFormat(SDL_GPUTextureFormat format) {
+    if (SDL_GPUTextureSupportsFormat(globals.device, format, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
+        globals.depthTextureFormat = format;
+    }
+}
+
+void setGlobalsWindowSizeAndAspectRatio(Globals& globals) {
+    if (!SDL_GetWindowSize(globals.window, &globals.windowWidth, &globals.windowHeight)) {
+        SDL_Log("Couldn't get window size :(: %s", SDL_GetError());
+        std::exit(1);
+    }
+    globals.aspectRatio =
+        static_cast<float>(globals.windowWidth) / static_cast<float>(globals.windowHeight);
+}
 
 ShaderInfo loadShaderInfoFromJson(const std::string& shaderFilename) {
     std::string jsonFilePath = COMPILED_SHADER_PATH + "/JSON/" + shaderFilename + ".json";
@@ -288,10 +312,10 @@ void initImGui() {
     style.FontScaleDpi = mainScale;
 
     // Setup Platform/Renderer backends
-    ImGui_ImplSDL3_InitForSDLGPU(window);
+    ImGui_ImplSDL3_InitForSDLGPU(globals.window);
     ImGui_ImplSDLGPU3_InitInfo init_info = {};
-    init_info.Device = device;
-    init_info.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(device, window);
+    init_info.Device = globals.device;
+    init_info.ColorTargetFormat = globals.swapchainTextureFormat;
     init_info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;                      // Only used in multi-viewports mode.
     init_info.SwapchainComposition = SDL_GPU_SWAPCHAINCOMPOSITION_SDR;  // Only used in multi-viewports mode.
     init_info.PresentMode = SDL_GPU_PRESENTMODE_VSYNC;
@@ -301,65 +325,64 @@ void initImGui() {
 
 void init() {
 
-    window = SDL_CreateWindow("Graphics From Scratch", 800, 600,
+    globals.window = SDL_CreateWindow("Graphics From Scratch", 800, 600,
         SDL_WINDOW_RESIZABLE);
 
-    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_SetWindowPosition(globals.window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
-    SDL_RaiseWindow(window);
+    SDL_RaiseWindow(globals.window);
     // confines mouse to window
-    SDL_SetWindowRelativeMouseMode(window, true);
+    SDL_SetWindowRelativeMouseMode(globals.window, true);
 
-    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
-    aspectRatio =
-        static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+    setGlobalsWindowSizeAndAspectRatio(globals);
 
     // create gpu device with shaders for vulkan or metal and choose the best
     // driver NULL chooses the best driver
-    device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV |
+    globals.device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV |
         SDL_GPU_SHADERFORMAT_MSL |
         SDL_GPU_SHADERFORMAT_DXIL,
         true, nullptr);
 
-    SDL_Log("Using GPU device driver: %s", SDL_GetGPUDeviceDriver(device));
+    SDL_Log("Using graphics device: %s", SDL_GetStringProperty(SDL_GetGPUDeviceProperties(globals.device), SDL_PROP_GPU_DEVICE_NAME_STRING, nullptr));
+
+    SDL_Log("Using GPU device driver: %s", SDL_GetGPUDeviceDriver(globals.device));
     SDL_Log("Base path: %s", BASE_PATH.c_str());
 
-    SDL_ClaimWindowForGPUDevice(device, window);
+    SDL_ClaimWindowForGPUDevice(globals.device, globals.window);
 
-    //SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, SDL_GPU_PRESENTMODE_VSYNC);
-    SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, SDL_GPU_PRESENTMODE_IMMEDIATE);
+    //SDL_SetGPUSwapchainParameters(globals.device, globals.window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, SDL_GPU_PRESENTMODE_VSYNC);
+    SDL_SetGPUSwapchainParameters(globals.device, globals.window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, SDL_GPU_PRESENTMODE_IMMEDIATE);
 
+    globals.swapchainTextureFormat = SDL_GetGPUSwapchainTextureFormat(globals.device, globals.window);
 
+    tryDepthTextureFormat(SDL_GPU_TEXTUREFORMAT_D32_FLOAT);
+    tryDepthTextureFormat(SDL_GPU_TEXTUREFORMAT_D24_UNORM);
+
+    if (globals.depthTextureFormat == SDL_GPU_TEXTUREFORMAT_INVALID) {
+        SDL_Log("No supported depth texture format found!");
+        std::exit(1);
+    }
+
+    // WILL CAUSE PROBLEMS DUE TO RESIZING (not anymore we just update it on
+    // window resize)
     depthTextureCreateInfo = {
         .type = SDL_GPU_TEXTURETYPE_2D,
-        .format = DEPTH_TEXTURE_FORMAT,
+        .format = globals.depthTextureFormat,
         .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
 
         //// WILL CAUSE PROBLEMS DUE TO RESIZING (not anymore we just update it on
         //// window resize)
-        .width = static_cast<Uint32>(windowWidth),
-        .height = static_cast<Uint32>(windowHeight),
+        .width = static_cast<Uint32>(globals.windowWidth),
+        .height = static_cast<Uint32>(globals.windowHeight),
         .layer_count_or_depth = 1,
         .num_levels = 1,
     };
 
-    //// SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
-    //depthTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    //depthTextureCreateInfo.format = DEPTH_TEXTURE_FORMAT;
+    globals.depthTexture = SDL_CreateGPUTexture(globals.device, &depthTextureCreateInfo);
+    SDL_SetGPUTextureName(globals.device, globals.depthTexture, "Depth Texture");
 
-    //// WILL CAUSE PROBLEMS DUE TO RESIZING (not anymore we just update it on
-    //// window resize)
-    //depthTextureCreateInfo.width = windowWidth;
-    //depthTextureCreateInfo.height = windowHeight;
-    //depthTextureCreateInfo.layer_count_or_depth = 1;
-    //depthTextureCreateInfo.num_levels = 1;
-    //depthTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
-
-    depthTexture = SDL_CreateGPUTexture(device, &depthTextureCreateInfo);
-    SDL_SetGPUTextureName(device, depthTexture, "Depth Texture");
-
-    camera.position = glm::vec3{ 0, 1, 3 };
-    camera.target = glm::vec3{ 0, 1, 0 };
+    globals.camera.position = glm::vec3{ 0, 1, 3 };
+    globals.camera.target = glm::vec3{ 0, 1, 0 };
 
     initImGui();
 
@@ -367,7 +390,7 @@ void init() {
 
 void setupPipeline() {
     // KEEP IN MIND THE UNIFORM BUFFER COUNT
-    SDL_GPUShader* vertexShader = LoadShader(device, "PositionColorTexturePerspective.vert");
+    SDL_GPUShader* vertexShader = LoadShader(globals.device, "PositionColorTexturePerspective.vert");
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(: %s", SDL_GetError());
         std::exit(1);
@@ -375,7 +398,7 @@ void setupPipeline() {
 
     // KEEP IN MIND THE UNIFORM BUFFER COUNT
     SDL_GPUShader* fragmentShader =
-        LoadShader(device, "CustomTexturedQuad.frag");
+        LoadShader(globals.device, "CustomTexturedQuad.frag");
     // SDL_GPUShader *fragmentShader =
     //     LoadShader(device, "SolidColor.frag", 0, 0, 0, 0);
     if (!fragmentShader) {
@@ -385,17 +408,10 @@ void setupPipeline() {
 
     std::array<SDL_GPUColorTargetDescription, 1> colorTargetDescriptions{ {
         {
-        .format = SDL_GetGPUSwapchainTextureFormat(device, window),
+        .format = globals.swapchainTextureFormat,
         .blend_state = {},
         }
     } };
-
-    SDL_GPUGraphicsPipelineTargetInfo targetInfo{
-        .color_target_descriptions = colorTargetDescriptions.data(),
-        .num_color_targets = colorTargetDescriptions.size(),
-        .depth_stencil_format = DEPTH_TEXTURE_FORMAT,
-        .has_depth_stencil_target = true,
-    };
 
     // describe the vertex buffers
     std::array<SDL_GPUVertexBufferDescription, 1> vertexBufferDescriptions{ {
@@ -448,9 +464,9 @@ void setupPipeline() {
         },
         .primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
         .rasterizer_state = {
-            //.fill_mode = SDL_GPU_FILLMODE_FILL,
+            .fill_mode = SDL_GPU_FILLMODE_FILL,
             //.fill_mode = SDL_GPU_FILLMODE_LINE,
-            .cull_mode = SDL_GPU_CULLMODE_BACK,
+            .cull_mode = SDL_GPU_CULLMODE_BACK, // backface culling
         },
         .multisample_state = {},
         .depth_stencil_state = {
@@ -458,17 +474,23 @@ void setupPipeline() {
             .enable_depth_test = true,
             .enable_depth_write = true,
         },
-        .target_info = targetInfo,
+        .target_info = {
+            .color_target_descriptions = colorTargetDescriptions.data(),
+            .num_color_targets = colorTargetDescriptions.size(),
+            .depth_stencil_format = globals.depthTextureFormat,
+            .has_depth_stencil_target = true,
+        }
+,
     };
 
-    fillPipeline = SDL_CreateGPUGraphicsPipeline(device, &pipelineInfo);
-    if (!fillPipeline) {
+    globals.fillPipeline = SDL_CreateGPUGraphicsPipeline(globals.device, &pipelineInfo);
+    if (!globals.fillPipeline) {
         SDL_Log("Failed to create graphics pipeline, error: %s", SDL_GetError());
         std::exit(1);
     }
 
-    SDL_ReleaseGPUShader(device, vertexShader);
-    SDL_ReleaseGPUShader(device, fragmentShader);
+    SDL_ReleaseGPUShader(globals.device, vertexShader);
+    SDL_ReleaseGPUShader(globals.device, fragmentShader);
 
     // LinearClamp
     SDL_GPUSamplerCreateInfo samplerCreateInfo{
@@ -479,7 +501,7 @@ void setupPipeline() {
         .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
         .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
     };
-    sampler = SDL_CreateGPUSampler(device, &samplerCreateInfo);
+    globals.sampler = SDL_CreateGPUSampler(globals.device, &samplerCreateInfo);
 }
 
 Model loadModel(const char* meshPath, const char* modelPath) {
@@ -508,16 +530,16 @@ Model loadModel(const char* meshPath, const char* modelPath) {
         .size = static_cast<Uint32>(vertices.size() *
             sizeof(vertices[0])), // size of the whole vertex buffer
     };
-    vertexBuffer = SDL_CreateGPUBuffer(device, &vertexBufferCreateInfo);
-    SDL_SetGPUBufferName(device, vertexBuffer, "Vertex Buffer");
+    vertexBuffer = SDL_CreateGPUBuffer(globals.device, &vertexBufferCreateInfo);
+    SDL_SetGPUBufferName(globals.device, vertexBuffer, "Vertex Buffer");
 
     SDL_GPUBufferCreateInfo indexBufferCreateInfo{
         .usage = SDL_GPU_BUFFERUSAGE_INDEX,
         .size = static_cast<Uint32>(indices.size() *
         sizeof(indices[0])), // size of the whole index buffer
     };
-    indexBuffer = SDL_CreateGPUBuffer(device, &indexBufferCreateInfo);
-    SDL_SetGPUBufferName(device, indexBuffer, "Index Buffer");
+    indexBuffer = SDL_CreateGPUBuffer(globals.device, &indexBufferCreateInfo);
+    SDL_SetGPUBufferName(globals.device, indexBuffer, "Index Buffer");
 
     SDL_GPUTextureCreateInfo textureCreateInfo{
         .type = SDL_GPU_TEXTURETYPE_2D,
@@ -528,8 +550,8 @@ Model loadModel(const char* meshPath, const char* modelPath) {
         .layer_count_or_depth = 1,
         .num_levels = 1,
     };
-    colormapTexture = SDL_CreateGPUTexture(device, &textureCreateInfo);
-    SDL_SetGPUTextureName(device, colormapTexture, "Colormap Texture");
+    colormapTexture = SDL_CreateGPUTexture(globals.device, &textureCreateInfo);
+    SDL_SetGPUTextureName(globals.device, colormapTexture, "Colormap Texture");
 
     // we have to use a transfer buffer to upload triangle data into the vertex
     // buffer
@@ -541,10 +563,10 @@ Model loadModel(const char* meshPath, const char* modelPath) {
             indexBufferCreateInfo.size, // also the size of the vertex buffer
     };
     SDL_GPUTransferBuffer* transferBuffer =
-        SDL_CreateGPUTransferBuffer(device, &transferBufferCreateInfo);
+        SDL_CreateGPUTransferBuffer(globals.device, &transferBufferCreateInfo);
 
     void* transferData =
-        (void*)SDL_MapGPUTransferBuffer(device, transferBuffer, false);
+        (void*)SDL_MapGPUTransferBuffer(globals.device, transferBuffer, false);
 
     SDL_memcpy(transferData, vertices.data(), vertexBufferCreateInfo.size);
     // copy index buffer to next section
@@ -554,7 +576,7 @@ Model loadModel(const char* meshPath, const char* modelPath) {
     SDL_memcpy(transferDataIndicesPtr, indices.data(),
         indexBufferCreateInfo.size);
 
-    SDL_UnmapGPUTransferBuffer(device, transferBuffer);
+    SDL_UnmapGPUTransferBuffer(globals.device, transferBuffer);
 
     // transfer texture
     SDL_GPUTransferBufferCreateInfo textureTransferBufferCreateInfo{
@@ -562,16 +584,16 @@ Model loadModel(const char* meshPath, const char* modelPath) {
         .size = static_cast<Uint32>(imageDataSurface->w * imageDataSurface->h * 4), // 4 bytes per pixel
     };
     SDL_GPUTransferBuffer* textureTransferBuffer =
-        SDL_CreateGPUTransferBuffer(device, &textureTransferBufferCreateInfo);
+        SDL_CreateGPUTransferBuffer(globals.device, &textureTransferBufferCreateInfo);
     Uint8* textureTransferData = static_cast<Uint8*>(
-        SDL_MapGPUTransferBuffer(device, textureTransferBuffer, false));
+        SDL_MapGPUTransferBuffer(globals.device, textureTransferBuffer, false));
     SDL_memcpy(textureTransferData, imageDataSurface->pixels,
         textureTransferBufferCreateInfo.size);
-    SDL_UnmapGPUTransferBuffer(device, textureTransferBuffer);
+    SDL_UnmapGPUTransferBuffer(globals.device, textureTransferBuffer);
 
     // upload transfer data to vertex buffer
     SDL_GPUCommandBuffer* uploadCommandBuffer =
-        SDL_AcquireGPUCommandBuffer(device);
+        SDL_AcquireGPUCommandBuffer(globals.device);
 
     SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
 
@@ -615,8 +637,8 @@ Model loadModel(const char* meshPath, const char* modelPath) {
     SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
 
     SDL_DestroySurface(imageDataSurface);
-    SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
-    SDL_ReleaseGPUTransferBuffer(device, textureTransferBuffer);
+    SDL_ReleaseGPUTransferBuffer(globals.device, transferBuffer);
+    SDL_ReleaseGPUTransferBuffer(globals.device, textureTransferBuffer);
 
     return Model{ vertexBuffer, indexBuffer, static_cast<Uint32>(indices.size()),
                  colormapTexture };
@@ -637,14 +659,14 @@ void updateCamera(float deltaTime) {
 
 
     // only changes look's start and end values if the mouse moved
-    if (mouseVelocityVector.x != 0.0f || mouseVelocityVector.y != 0.0f) {
+    if (globals.mouseVelocityVector.x != 0.0f || globals.mouseVelocityVector.y != 0.0f) {
 
         // wrap angle (yaw)
-        look.x = SDL_fmodf(look.x - mouseVelocityVector.x * MOUSE_SENSITIVITY,
+        globals.look.x = SDL_fmodf(globals.look.x - globals.mouseVelocityVector.x * MOUSE_SENSITIVITY,
             2.0f * SDL_PI_F);
         // clamp to -90, 90 (pitch)
-        look.y =
-            SDL_clamp(look.y - mouseVelocityVector.y * MOUSE_SENSITIVITY,
+        globals.look.y =
+            SDL_clamp(globals.look.y - globals.mouseVelocityVector.y * MOUSE_SENSITIVITY,
                 glm::radians(-89.0f), glm::radians(89.0f));
 
         //SDL_Log("%f, %f", look.yaw, look.pitch);
@@ -654,7 +676,7 @@ void updateCamera(float deltaTime) {
     //    glm::yawPitchRoll(look.getValue().x, look.getValue().y, 0.0f);
 
     glm::mat3 yawPitchRollMatrix =
-        glm::yawPitchRoll(look.x, look.y, 0.0f);
+        glm::yawPitchRoll(globals.look.x, globals.look.y, 0.0f);
 
     // glm::vec3 lookDirection{SDL_sinf(look.yaw), 0.0f,
     // SDL_cosf(look.yaw)};
@@ -672,8 +694,8 @@ void updateCamera(float deltaTime) {
     // deltatimeify
     movementDirection = movementDirection * CAMERA_SPEED * deltaTime;
 
-    camera.position += movementDirection;
-    camera.target = camera.position + forward;
+    globals.camera.position += movementDirection;
+    globals.camera.target = globals.camera.position + forward;
 }
 
 /* This function runs once at startup. */
@@ -709,24 +731,19 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     case SDL_EVENT_WINDOW_RESIZED:
     // recreate the depth texture every time the window is resized
     // scrap old depth texture with old width and height
-    SDL_ReleaseGPUTexture(device, depthTexture);
+    SDL_ReleaseGPUTexture(globals.device, globals.depthTexture);
     // get new width and height
-    if (!SDL_GetWindowSize(window, &windowWidth, &windowHeight)) {
-        SDL_Log("Couldn't get window size :(: %s", SDL_GetError());
-        return SDL_APP_FAILURE;
-    }
+    setGlobalsWindowSizeAndAspectRatio(globals);
 
     // update width and height
-    depthTextureCreateInfo.width = windowWidth;
-    depthTextureCreateInfo.height = windowHeight;
-    aspectRatio =
-        static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+    depthTextureCreateInfo.width = globals.windowWidth;
+    depthTextureCreateInfo.height = globals.windowHeight;
 
     // recreate depthTexture
-    depthTexture = SDL_CreateGPUTexture(device, &depthTextureCreateInfo);
-    SDL_SetGPUTextureName(device, depthTexture, "Depth Texture");
+    globals.depthTexture = SDL_CreateGPUTexture(globals.device, &depthTextureCreateInfo);
+    SDL_SetGPUTextureName(globals.device, globals.depthTexture, "Depth Texture");
 
-    if (!depthTexture) {
+    if (!globals.depthTexture) {
 
         SDL_Log("Couldn't recreate depth texture after window resize ;(: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -735,13 +752,13 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     if (event->button.button == SDL_BUTTON_LEFT) {
         if (!io->WantCaptureMouse)
-            SDL_SetWindowRelativeMouseMode(window, true);
+            SDL_SetWindowRelativeMouseMode(globals.window, true);
     }
     break;
 
     case SDL_EVENT_MOUSE_MOTION:
-    if (SDL_GetWindowRelativeMouseMode(window)) {
-        mouseVelocityVector += glm::vec2{ event->motion.xrel, event->motion.yrel };
+    if (SDL_GetWindowRelativeMouseMode(globals.window)) {
+        globals.mouseVelocityVector += glm::vec2{ event->motion.xrel, event->motion.yrel };
     }
     break;
 
@@ -766,13 +783,14 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     cameraDownPressed = true;
     break;
     case SDLK_ESCAPE:
-    SDL_SetWindowRelativeMouseMode(window, false);
+    SDL_SetWindowRelativeMouseMode(globals.window, false);
     break;
     case SDLK_F11:
     // https://discourse.libsdl.org/t/how-to-check-if-a-window-is-fullscreen/35246/2
-    bool isFullscreen = SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN;
-    SDL_SetWindowFullscreen(window, !isFullscreen);
-    //SDL_Log("Fullscreen mode toggled to %d", SDL_GetWindowFullscreenMode(window));
+    bool isFullscreen = SDL_GetWindowFlags(globals.window) & SDL_WINDOW_FULLSCREEN;
+    SDL_SetWindowFullscreen(globals.window, !isFullscreen);
+    //SDL_Log("Fullscreen mode toggled to %d", SDL_GetWindowFullscreenMode(globals.window));
+    setGlobalsWindowSizeAndAspectRatio(globals);
     break;
     }
     break;
@@ -834,10 +852,10 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // create matrices so the gpu can use them to transform the vertices to
     // go on the screen where they belong
     glm::mat4 projectionMatrix =
-        glm::perspective(glm::radians(70.0f), aspectRatio, 0.01f, 1000.0f);
+        glm::perspective(glm::radians(70.0f), globals.aspectRatio, 0.01f, 1000.0f);
     // glm::mat4 viewMatrix =
     //     glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -3.0f));
-    glm::mat4 viewMatrix = glm::lookAt(camera.position, camera.target,
+    glm::mat4 viewMatrix = glm::lookAt(globals.camera.position, globals.camera.target,
         glm::vec3{ 0.0f, 1.0f, 0.0f });
 
     // rotation matrix
@@ -898,12 +916,8 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     ImDrawData* draw_data = ImGui::GetDrawData();
     const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
 
-
-    // already getting window size in SDL_AppEvent
-    // SDL_GetWindowSize(window, &windowWidth, &windowHeight);
-
     // list of commands to send to the gpu for fast execution
-    SDL_GPUCommandBuffer* commandBuffer = SDL_AcquireGPUCommandBuffer(device);
+    SDL_GPUCommandBuffer* commandBuffer = SDL_AcquireGPUCommandBuffer(globals.device);
 
     // swapchain: basically loading the next frame as the previous one is
     // being drawn
@@ -916,8 +930,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // window,
     //                                      &swapchainTexture, &width,
     //                                      &height);
-    SDL_WaitAndAcquireGPUSwapchainTexture(commandBuffer, window,
-        &swapchainTexture, &width, &height);
+    SDL_WaitAndAcquireGPUSwapchainTexture(commandBuffer, globals.window, &swapchainTexture, &width, &height);
     // if the texture is NULL (ex. minimized), submit and return
     if (swapchainTexture == nullptr) {
         SDL_SubmitGPUCommandBuffer(commandBuffer);
@@ -944,7 +957,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
 
     SDL_GPUDepthStencilTargetInfo depthStencilTargetInfo{
-        .texture = depthTexture,
+        .texture = globals.depthTexture,
         .clear_depth = 1,
         .load_op = SDL_GPU_LOADOP_CLEAR,
         .store_op = SDL_GPU_STOREOP_DONT_CARE,
@@ -959,7 +972,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
 
     // bind the graphics pipeline
-    SDL_BindGPUGraphicsPipeline(renderPass, fillPipeline);
+    SDL_BindGPUGraphicsPipeline(renderPass, globals.fillPipeline);
 
     // DRAW SOMETHING
     SDL_GPUBufferBinding vertexBufferBinding{
@@ -976,7 +989,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     SDL_GPUTextureSamplerBinding textureSamplerBinding{
         .texture = model.colormapTexture,
-        .sampler = sampler,
+        .sampler = globals.sampler,
     };
     SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
 
@@ -1016,7 +1029,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // do now
     SDL_SubmitGPUCommandBuffer(commandBuffer);
 
-    mouseVelocityVector = { 0.0f, 0.0f };
+    globals.mouseVelocityVector = { 0.0f, 0.0f };
 
     return SDL_APP_CONTINUE;
 }
@@ -1028,18 +1041,18 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     ImGui_ImplSDLGPU3_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_ReleaseGPUGraphicsPipeline(device, fillPipeline);
+    SDL_ReleaseGPUGraphicsPipeline(globals.device, globals.fillPipeline);
 
-    SDL_ReleaseGPUTexture(device, model.colormapTexture);
-    SDL_ReleaseGPUTexture(device, depthTexture);
+    SDL_ReleaseGPUTexture(globals.device, model.colormapTexture);
+    SDL_ReleaseGPUTexture(globals.device, globals.depthTexture);
 
-    SDL_ReleaseGPUBuffer(device, model.vertexBuffer);
-    SDL_ReleaseGPUBuffer(device, model.indexBuffer);
+    SDL_ReleaseGPUBuffer(globals.device, model.vertexBuffer);
+    SDL_ReleaseGPUBuffer(globals.device, model.indexBuffer);
 
-    SDL_ReleaseGPUSampler(device, sampler);
+    SDL_ReleaseGPUSampler(globals.device, globals.sampler);
 
-    SDL_DestroyGPUDevice(device);
-    SDL_DestroyWindow(window);
+    SDL_DestroyGPUDevice(globals.device);
+    SDL_DestroyWindow(globals.window);
 }
 
 // https://www.youtube.com/watch?v=Lw8LPXPyrl0
