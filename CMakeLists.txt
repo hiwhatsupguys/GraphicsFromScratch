@@ -50,5 +50,5 @@ find_package(SDL3_image REQUIRED)
 # add_subdirectory(vendored/SDL_image EXCLUDE_FROM_ALL)
 
 # Include sub-projects.
-add_subdirectory ("GraphicsFromScratch")
+add_subdirectory ("src")
 
