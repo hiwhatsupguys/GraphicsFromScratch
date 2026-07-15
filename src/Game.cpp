@@ -1,8 +1,10 @@
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <array>
 
@@ -31,15 +33,31 @@ void Game::init() {
 
     // LOAD MODELS HERE
 
-    globals.model = Assets::loadModel(copyPass, MESH_PATH, MODEL_PATH);
+    globals.colormapTexture = Assets::loadTextureFile(copyPass, MESH_PATH);
+
+    //globals.model = Assets::loadModel(copyPass, MESH_PATH, MODEL_PATH);
+    globals.models.insert(globals.models.end(), {
+        {Assets::loadObjFile(copyPass, "Content/Meshes/sedan-sports.obj"), globals.colormapTexture},
+        {Assets::loadObjFile(copyPass, "Content/Meshes/van.obj"), globals.colormapTexture},
+    });
+
+    globals.entities.insert(globals.entities.end(), {
+        {
+            .modelID = 0,
+            .position = {},
+            .rotation = glm::quat{glm::vec3{}}, // identity quaternion by default (no rotation). uses euler angles of 0,0,0
+        },
+        {
+            .modelID = 1,
+            .position = {3.0f, 0.0f, 0.0f},
+            .rotation = glm::quat(glm::radians(glm::vec3{90, 45, 0})), // quaternion from euler angles
+        },
+    });
 
     // END LOAD MODELS HERE
 
     SDL_EndGPUCopyPass(copyPass);
     SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
-
-    globals.rotation = 0.0f;
-    globals.isRotating = true;
 
     globals.clearColor = SDL_FColor(0.45f, 0.55f, 0.60f, 1.00f);
 
@@ -241,7 +259,10 @@ void Game::update(float deltaTime) {
 
     // rotation += deltaTime: 1 radian per second
     // want: pi radians per second
-    globals.rotation += globals.isRotating ? ROTATION_SPEED * deltaTime : 0.0f;
+    if (globals.isRotating) {
+        globals.entities[0].rotation *= glm::quat{ glm::vec3{0.0f, ROTATION_SPEED * deltaTime, 0.0f} };
+    }
+    //globals.rotation += globals.isRotating ? ROTATION_SPEED * deltaTime : 0.0f;
 
     Game::updateCamera(deltaTime);
 }
@@ -255,11 +276,6 @@ void Game::render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchain
      //glm::mat4 viewMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -3.0f));
     glm::mat4 viewMatrix = glm::lookAt(globals.camera.position, globals.camera.target, glm::vec3{ 0.0f, 1.0f, 0.0f });
 
-    // 3d (4d) rotation matrix
-    glm::mat4 modelMatrix = glm::rotate(glm::mat4(1.0f), globals.rotation, glm::vec3(0.0f, 1.0f, 0.0f));
-
-    // calculate mvp matrix to send to the vertex shader
-    matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
 
     // CREATE COLOR TARGET
 
@@ -292,37 +308,50 @@ void Game::render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchain
     SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, &depthStencilTargetInfo);
 
 
-    // bind the graphics pipeline
-    SDL_BindGPUGraphicsPipeline(renderPass, globals.fillPipeline);
+    for (const Entity &entity : globals.entities) {
+        // 3d (4d) rotation matrix
+        //glm::mat4 modelMatrix = glm::rotate(glm::mat4(1.0f), globals.rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), entity.position) * glm::toMat4(entity.rotation);
 
-    // DRAW SOMETHING
-    SDL_GPUBufferBinding vertexBufferBinding{
-        .buffer = globals.model.vertexBuffer,
-        .offset = 0,
-    };
-    SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
+        // calculate mvp matrix to send to the vertex shader
+        matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
 
-    SDL_GPUBufferBinding indexBufferBinding{
-        .buffer = globals.model.indexBuffer,
-        .offset = 0,
-    };
-    SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        Assets::Model& model = globals.models[entity.modelID];
+        
+        // bind the graphics pipeline
+        SDL_BindGPUGraphicsPipeline(renderPass, globals.fillPipeline);
 
-    SDL_GPUTextureSamplerBinding textureSamplerBinding{
-        .texture = globals.model.colormapTexture,
-        .sampler = globals.sampler,
-    };
-    SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
+        // DRAW SOMETHING
+        SDL_GPUBufferBinding vertexBufferBinding{
+            .buffer = model.vertexBuffer,
+            .offset = 0,
+        };
+        SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
+
+        SDL_GPUBufferBinding indexBufferBinding{
+            .buffer = model.indexBuffer,
+            .offset = 0,
+        };
+        SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+        SDL_GPUTextureSamplerBinding textureSamplerBinding{
+            .texture = model.colormapTexture,
+            .sampler = globals.sampler,
+        };
+        SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
+
+        // push vertex uniform data so the gpu can perform the matrix
+        // multiplication
+        SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform, sizeof(matrixUniform));
+
+        // fragment shader uniforms
+        // SDL_PushGPUFragmentUniformData();
+
+        SDL_DrawGPUIndexedPrimitives(renderPass, model.numIndices, 1, 0, 0, 0);
+    }
 
 
-    // push vertex uniform data so the gpu can perform the matrix
-    // multiplication
-    SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform, sizeof(matrixUniform));
 
-    // fragment shader uniforms
-    // SDL_PushGPUFragmentUniformData();
-
-    SDL_DrawGPUIndexedPrimitives(renderPass, globals.model.numIndices, 1, 0, 0, 0);
 
 
     // END RENDER PASS

@@ -18,8 +18,8 @@ SDL_GPUTexture* Buffer::uploadTexture(SDL_GPUCopyPass* copyPass, const Uint8* pi
         .layer_count_or_depth = 1,
         .num_levels = 1,
     };
-    SDL_GPUTexture* colormapTexture = SDL_CreateGPUTexture(globals.device, &textureCreateInfo);
-    SDL_SetGPUTextureName(globals.device, colormapTexture, "Colormap Texture");
+    SDL_GPUTexture* texture = SDL_CreateGPUTexture(globals.device, &textureCreateInfo);
+    SDL_SetGPUTextureName(globals.device, texture, "Colormap Texture");
 
     // transfer texture
     SDL_GPUTransferBufferCreateInfo textureTransferBufferCreateInfo{
@@ -37,7 +37,7 @@ SDL_GPUTexture* Buffer::uploadTexture(SDL_GPUCopyPass* copyPass, const Uint8* pi
     };
 
     SDL_GPUTextureRegion textureRegion{
-        .texture = colormapTexture,
+        .texture = texture,
         .w = static_cast<Uint32>(width),
         .h = static_cast<Uint32>(height),
         .d = 1,
@@ -47,7 +47,7 @@ SDL_GPUTexture* Buffer::uploadTexture(SDL_GPUCopyPass* copyPass, const Uint8* pi
 
     SDL_ReleaseGPUTransferBuffer(globals.device, textureTransferBuffer);
 
-    return colormapTexture;
+    return texture;
 }
 
 // converts span of any type to a span of Uint8

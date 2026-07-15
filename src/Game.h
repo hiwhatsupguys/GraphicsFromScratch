@@ -1,12 +1,23 @@
 #pragma once
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <string>
 
 namespace Game {
 //public:
     struct MatrixUniformBuffer {
         glm::mat4 mvp;
+    };
+
+    typedef Uint32 ModelID;
+
+    struct Entity {
+        ModelID modelID;
+        glm::vec3 position;
+        glm::quat rotation; // rotation quaternion
     };
 
     //struct Mesh {
@@ -29,6 +40,7 @@ namespace Game {
 
 //private:
 
+
     constexpr float EYE_HEIGHT = 1.0f;
     // radians per secoar*d
     constexpr float ROTATION_SPEED = SDL_PI_F / 4.0f;
@@ -39,7 +51,7 @@ namespace Game {
     // units per second
     constexpr float CAMERA_SPEED = 5.0f;
 
-    inline const std::string MODEL_PATH = "Content/Meshes/sedan-sports.obj";
+    //inline const std::string MODEL_PATH = "Content/Meshes/sedan-sports.obj";
     inline const std::string MESH_PATH = "Content/Meshes/colormap.png";
 
 };

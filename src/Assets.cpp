@@ -9,7 +9,7 @@
 #include "Buffer.h"
 #include "ObjData.h"
 
-Assets::Mesh Assets::loadObjFile(SDL_GPUCopyPass *copyPass, const std::string &meshPath, const std::string &modelPath) {
+Assets::Mesh Assets::loadObjFile(SDL_GPUCopyPass *copyPass, const std::string &modelPath) {
     // use tinyobjloader to load .obj as vectors of our custom vertices and
     // indices
     ObjData objData;
@@ -38,16 +38,16 @@ SDL_GPUTexture *Assets::loadTextureFile(SDL_GPUCopyPass *copyPass, const std::st
     return texture;
 }
 
-Assets::Model Assets::loadModel(SDL_GPUCopyPass *copyPass, const std::string &meshPath, const std::string &modelPath) {
-
-    Mesh mesh = loadObjFile(copyPass, meshPath, modelPath);
-
-
-    SDL_GPUTexture* colormapTexture = loadTextureFile(copyPass, meshPath);
-
-
-    return Model{ 
-        mesh,
-        colormapTexture
-    };
-}
+//Assets::Model Assets::loadModel(SDL_GPUCopyPass *copyPass, const std::string &meshPath, const std::string &modelPath) {
+//
+//    Mesh mesh = loadObjFile(copyPass, modelPath);
+//
+//
+//    SDL_GPUTexture* colormapTexture = loadTextureFile(copyPass, meshPath);
+//
+//
+//    return Model{ 
+//        mesh,
+//        colormapTexture
+//    };
+//}

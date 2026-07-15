@@ -2,7 +2,11 @@
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 #include <imgui.h>
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
 #include "Assets.h"
+#include "Game.h"
 
 class Globals {
 public:
@@ -26,6 +30,8 @@ public:
     SDL_GPUTextureFormat swapchainTextureFormat;
     SDL_GPUSampler* sampler;
 
+    SDL_GPUTexture* colormapTexture;
+
     glm::vec2 mouseVelocityVector{ 0.0f, 0.0f };
 
     ImGuiIO* io;
@@ -39,10 +45,12 @@ public:
     Look look{ 0.0f, 0.0f };
 
     SDL_FColor clearColor;
-    Assets::Model model;
+    //Assets::Model model;
+    std::vector<Assets::Model> models;
+    //std::unordered_set<Game::Entity> entities;
+    std::vector<Game::Entity> entities;
 
-    float rotation;
-    bool isRotating;
+    bool isRotating = true;
 
     bool cameraUpPressed;
     bool cameraDownPressed;

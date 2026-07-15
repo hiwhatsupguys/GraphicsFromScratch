@@ -31,11 +31,8 @@ Uint64 previousTime;
 // deltaTime in seconds
 float deltaTime;
 
-
 //const std::string BASE_PATH = SDL_GetBasePath();
 //const std::string COMPILED_SHADER_PATH = BASE_PATH + "/Content/Shaders/Compiled/";
-
-constexpr glm::vec4 WHITE{ 1, 1, 1, 1 };
 
 // https://github.com/ocornut/imgui/blob/master/examples/example_sdl3_sdlgpu3/main.cpp
 void initImGui() {
@@ -338,12 +335,14 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
 
     SDL_ReleaseGPUGraphicsPipeline(globals.device, globals.fillPipeline);
 
-    SDL_ReleaseGPUTexture(globals.device, globals.model.colormapTexture);
+    SDL_ReleaseGPUTexture(globals.device, globals.colormapTexture);
+
+    for (Assets::Model &model : globals.models) {
+        SDL_ReleaseGPUBuffer(globals.device, model.vertexBuffer);
+        SDL_ReleaseGPUBuffer(globals.device, model.indexBuffer);
+    }
+
     SDL_ReleaseGPUTexture(globals.device, globals.depthTexture);
-
-    SDL_ReleaseGPUBuffer(globals.device, globals.model.vertexBuffer);
-    SDL_ReleaseGPUBuffer(globals.device, globals.model.indexBuffer);
-
     SDL_ReleaseGPUSampler(globals.device, globals.sampler);
 
     SDL_DestroyGPUDevice(globals.device);

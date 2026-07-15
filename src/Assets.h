@@ -14,8 +14,8 @@ public:
         SDL_GPUTexture* colormapTexture;
     };
 
-    static Mesh loadObjFile(SDL_GPUCopyPass* copyPass, const std::string& meshPath, const std::string& modelPath);
+    static Mesh loadObjFile(SDL_GPUCopyPass* copyPass, const std::string& modelPath);
     static SDL_GPUTexture *loadTextureFile(SDL_GPUCopyPass *copyPass, const std::string &textureFile);
-    static Model loadModel(SDL_GPUCopyPass *copyPass, const std::string &meshPath, const std::string &modelPath);
+    //static Model loadModel(SDL_GPUCopyPass *copyPass, const std::string &meshPath, const std::string &modelPath);
 private:
 };
