@@ -16,36 +16,20 @@
 
 #include "Game.h"
 #include "Common.h"
+#include "Assets.h"
 #include <glm/glm.hpp>
 
-#include <string>
-#include <array>
 #include <cmath>
-#include <vector>
 #include <imgui.h>
 #include <imgui_impl_sdlgpu3.h>
 #include <imgui_impl_sdl3.h>
 
-
-
 SDL_GPUTextureCreateInfo depthTextureCreateInfo{}; // for updating width and height later
-
-
 
 Uint64 currentTime;
 Uint64 previousTime;
 // deltaTime in seconds
 float deltaTime;
-
-//struct Look {
-//    float yaw;
-//    float pitch;
-//};
-
-
-
-
-
 
 
 //const std::string BASE_PATH = SDL_GetBasePath();
@@ -86,6 +70,7 @@ void initImGui() {
     init_info.SwapchainComposition = SDL_GPU_SWAPCHAINCOMPOSITION_SDR;  // Only used in multi-viewports mode.
     init_info.PresentMode = SDL_GPU_PRESENTMODE_VSYNC;
     ImGui_ImplSDLGPU3_Init(&init_info);
+
 
 }
 
@@ -138,8 +123,8 @@ void initSDL() {
 
         //// WILL CAUSE PROBLEMS DUE TO RESIZING (not anymore we just update it on
         //// window resize)
-        .width = static_cast<Uint32>(globals.windowWidth),
-        .height = static_cast<Uint32>(globals.windowHeight),
+        .width = static_cast<Uint32>(globals.windowSize.x),
+        .height = static_cast<Uint32>(globals.windowSize.y),
         .layer_count_or_depth = 1,
         .num_levels = 1,
     };
@@ -188,8 +173,8 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     globals.updateWindowSizeAndAspectRatio();
 
     // update width and height
-    depthTextureCreateInfo.width = globals.windowWidth;
-    depthTextureCreateInfo.height = globals.windowHeight;
+    depthTextureCreateInfo.width = static_cast<Uint32>(globals.windowSize.x);
+    depthTextureCreateInfo.height = static_cast<Uint32>(globals.windowSize.y);
 
     // recreate depthTexture
     globals.depthTexture = SDL_CreateGPUTexture(globals.device, &depthTextureCreateInfo);

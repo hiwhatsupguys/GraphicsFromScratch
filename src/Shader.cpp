@@ -1,7 +1,15 @@
 #include "Shader.h"
 
+#include <string>
+#include <format>
+#include <nlohmann/json.hpp>
+#include <fstream>
+#include <ios>
+
+using json = nlohmann::json;
+
 // ripped from SDL_gpu examples
-SDL_GPUShader* Shader::loadShader(SDL_GPUDevice* device, const std::string& shaderFilename) {
+SDL_GPUShader* Shader::loadShader(SDL_GPUDevice* device, const std::string &shaderFilename) {
     // Auto-detect the shader stage from the file name for convenience
     SDL_GPUShaderStage stage;
     if (shaderFilename.contains(".vert"))
@@ -75,7 +83,7 @@ SDL_GPUShader* Shader::loadShader(SDL_GPUDevice* device, const std::string& shad
     return shader;
 }
 
-Shader::ShaderInfo Shader::loadShaderInfoFromJson(const std::string& shaderFilename) {
+Shader::ShaderInfo Shader::loadShaderInfoFromJson(const std::string &shaderFilename) {
     std::string jsonFilePath = COMPILED_SHADER_PATH + "/JSON/" + shaderFilename + ".json";
     std::ifstream jsonFile{ jsonFilePath };
     if (!jsonFile) {

@@ -1,163 +1,42 @@
 #include <SDL3/SDL.h>
-#include <SDL3_image/SDL_image.h>
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/euler_angles.hpp>
+#include <array>
+
 #include "Game.h"
+#include "Assets.h"
 #include "Common.h"
 #include "Shader.h"
 #include "Vertex.h"
-#include "ObjData.h"
+
+#include "Buffer.h"
+
+// VVV CAUSES MEGA LINKER ERROR
+//#include "ObjData.h"
 
 //// Define static member declared in Game.h
 //Game::MatrixUniformBuffer Game::matrixUniform{};
 
-Game::Model Game::loadModel(const char* meshPath, const char* modelPath) {
-    SDL_GPUBuffer* vertexBuffer;
-    SDL_GPUBuffer* indexBuffer;
-    SDL_GPUTexture* colormapTexture;
 
-    // use tinyobjloader to load .obj as vectors of our custom vertices and
-    // indices
-    ObjData objData;
-    objData.loadModel(modelPath);
-    const std::vector<Vertex>& vertices = objData.vertices;
-    const std::vector<Uint32>& indices = objData.indices;
+void Game::init() {
+    setupPipeline();
 
-    SDL_Surface* imageDataSurface = IMG_Load(meshPath);
-    imageDataSurface =
-        SDL_ConvertSurface(imageDataSurface, SDL_PIXELFORMAT_ABGR8888);
-    if (!imageDataSurface) {
-        SDL_Log("image load failed ;(: %s", SDL_GetError());
-        std::exit(1);
-        // return SDL_APP_FAILURE;
-    }
-
-    SDL_GPUBufferCreateInfo vertexBufferCreateInfo{
-        .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
-        .size = static_cast<Uint32>(vertices.size() *
-            sizeof(vertices[0])), // size of the whole vertex buffer
-    };
-    vertexBuffer = SDL_CreateGPUBuffer(globals.device, &vertexBufferCreateInfo);
-    SDL_SetGPUBufferName(globals.device, vertexBuffer, "Vertex Buffer");
-
-    SDL_GPUBufferCreateInfo indexBufferCreateInfo{
-        .usage = SDL_GPU_BUFFERUSAGE_INDEX,
-        .size = static_cast<Uint32>(indices.size() *
-        sizeof(indices[0])), // size of the whole index buffer
-    };
-    indexBuffer = SDL_CreateGPUBuffer(globals.device, &indexBufferCreateInfo);
-    SDL_SetGPUBufferName(globals.device, indexBuffer, "Index Buffer");
-
-    SDL_GPUTextureCreateInfo textureCreateInfo{
-        .type = SDL_GPU_TEXTURETYPE_2D,
-        .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
-        .usage = SDL_GPU_TEXTUREUSAGE_SAMPLER,
-        .width = static_cast<Uint32>(imageDataSurface->w),
-        .height = static_cast<Uint32>(imageDataSurface->h),
-        .layer_count_or_depth = 1,
-        .num_levels = 1,
-    };
-    colormapTexture = SDL_CreateGPUTexture(globals.device, &textureCreateInfo);
-    SDL_SetGPUTextureName(globals.device, colormapTexture, "Colormap Texture");
-
-    // we have to use a transfer buffer to upload triangle data into the vertex
-    // buffer
-    // transfer buffer: special GPU memory that is used to transfer data from
-    // the CPU to the GPU
-    SDL_GPUTransferBufferCreateInfo transferBufferCreateInfo{
-        .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-        .size = vertexBufferCreateInfo.size +
-            indexBufferCreateInfo.size, // also the size of the vertex buffer
-    };
-    SDL_GPUTransferBuffer* transferBuffer =
-        SDL_CreateGPUTransferBuffer(globals.device, &transferBufferCreateInfo);
-
-    void* transferData =
-        (void*)SDL_MapGPUTransferBuffer(globals.device, transferBuffer, false);
-
-    SDL_memcpy(transferData, vertices.data(), vertexBufferCreateInfo.size);
-    // copy index buffer to next section
-    // dest, source
-    void* transferDataIndicesPtr = static_cast<void*>(
-        static_cast<char*>(transferData) + vertexBufferCreateInfo.size);
-    SDL_memcpy(transferDataIndicesPtr, indices.data(),
-        indexBufferCreateInfo.size);
-
-    SDL_UnmapGPUTransferBuffer(globals.device, transferBuffer);
-
-    // transfer texture
-    SDL_GPUTransferBufferCreateInfo textureTransferBufferCreateInfo{
-        .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-        .size = static_cast<Uint32>(imageDataSurface->w * imageDataSurface->h * 4), // 4 bytes per pixel
-    };
-    SDL_GPUTransferBuffer* textureTransferBuffer =
-        SDL_CreateGPUTransferBuffer(globals.device, &textureTransferBufferCreateInfo);
-    Uint8* textureTransferData = static_cast<Uint8*>(
-        SDL_MapGPUTransferBuffer(globals.device, textureTransferBuffer, false));
-    SDL_memcpy(textureTransferData, imageDataSurface->pixels,
-        textureTransferBufferCreateInfo.size);
-    SDL_UnmapGPUTransferBuffer(globals.device, textureTransferBuffer);
-
-    // upload transfer data to vertex buffer
     SDL_GPUCommandBuffer* uploadCommandBuffer =
         SDL_AcquireGPUCommandBuffer(globals.device);
 
     SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
 
-    SDL_GPUTransferBufferLocation transferBufferLocation{
-        .transfer_buffer = transferBuffer,
-        .offset = 0,
-    };
+    // LOAD MODELS HERE
 
-    SDL_GPUBufferRegion bufferRegion{
-        .buffer = vertexBuffer,
-        .offset = 0,
-        .size = vertexBufferCreateInfo.size,
-    };
-    SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
-        false);
+    globals.model = Assets::loadModel(copyPass, MESH_PATH, MODEL_PATH);
 
-    transferBufferLocation.offset = vertexBufferCreateInfo.size; // move over to the index buffer section
-    bufferRegion.buffer = indexBuffer;
-    bufferRegion.size = indexBufferCreateInfo.size;
-    bufferRegion.offset = 0;
-
-    SDL_UploadToGPUBuffer(copyPass, &transferBufferLocation, &bufferRegion,
-        false);
-
-    SDL_GPUTextureTransferInfo textureTransferInfo{
-        .transfer_buffer = textureTransferBuffer,
-        .offset = 0,
-    };
-
-    SDL_GPUTextureRegion textureRegion{
-        .texture = colormapTexture,
-        .w = static_cast<Uint32>(imageDataSurface->w),
-        .h = static_cast<Uint32>(imageDataSurface->h),
-        .d = 1,
-    };
-    SDL_UploadToGPUTexture(copyPass, &textureTransferInfo, &textureRegion,
-        false);
+    // END LOAD MODELS HERE
 
     SDL_EndGPUCopyPass(copyPass);
-
     SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
-
-    SDL_DestroySurface(imageDataSurface);
-    SDL_ReleaseGPUTransferBuffer(globals.device, transferBuffer);
-    SDL_ReleaseGPUTransferBuffer(globals.device, textureTransferBuffer);
-
-    return Model{ vertexBuffer, indexBuffer, static_cast<Uint32>(indices.size()),
-                 colormapTexture };
-}
-
-void Game::init() {
-    setupPipeline();
-
-    globals.model = Game::loadModel(MESH_PATH, MODEL_PATH);
 
     globals.rotation = 0.0f;
     globals.isRotating = true;

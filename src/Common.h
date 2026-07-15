@@ -2,13 +2,14 @@
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 #include <imgui.h>
-#include "Game.h"
+#include "Assets.h"
 
 class Globals {
 public:
     SDL_Window* window;
     SDL_GPUDevice* device;
-    int windowWidth, windowHeight;
+    glm::ivec2 windowSize;
+    //int windowWidth, windowHeight;
     float aspectRatio;
 
     // specifies which shaders to use, how many buffers, vertex inputs, color
@@ -38,7 +39,7 @@ public:
     Look look{ 0.0f, 0.0f };
 
     SDL_FColor clearColor;
-    Game::Model model;
+    Assets::Model model;
 
     float rotation;
     bool isRotating;
@@ -54,11 +55,11 @@ public:
     float sliderFloat1 = 0.0f;
 
     void updateWindowSizeAndAspectRatio() {
-        if (!SDL_GetWindowSize(window, &windowWidth, &windowHeight)) {
+        if (!SDL_GetWindowSize(window, &windowSize.x, &windowSize.y)) {
             SDL_Log("Couldn't get window size :(: %s", SDL_GetError());
             std::exit(1);
         }
-        aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+        aspectRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
     }
 
     void tryDepthTextureFormat(SDL_GPUTextureFormat format) {
