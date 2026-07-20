@@ -26,6 +26,12 @@
 void Game::init() {
     setupPipeline();
 
+    SDL_Log("Size of FragUniformBuffer: %llu", sizeof(FragUniformBuffer));
+    SDL_Log("offset of lightPosition: %llu", offsetof(FragUniformBuffer, lightPosition));
+    SDL_Log("offset of lightColor: %llu", offsetof(FragUniformBuffer, lightColor));
+    SDL_Log("offset of lightIntensity: %llu", offsetof(FragUniformBuffer, lightIntensity));
+
+
     SDL_GPUCommandBuffer* uploadCommandBuffer =
         SDL_AcquireGPUCommandBuffer(globals.device);
 
@@ -54,29 +60,31 @@ void Game::init() {
         },
     });
 
+    globals.lightPosition = {3.0f, 3.0f, 3.0f};
+    globals.lightColor = { 1.0f, 0.0f, 0.0f };
+    globals.lightIntensity = 1.0f;
+
     // END LOAD MODELS HERE
 
     SDL_EndGPUCopyPass(copyPass);
     SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
 
-    globals.clearColor = SDL_FColor(0.45f, 0.55f, 0.60f, 1.00f);
+    globals.clearColor = convertRGBToSRGB(SDL_FColor(0.45f, 0.55f, 0.60f, 1.00f));
+    globals.clearColor = SDL_FColor(0, 0, 0, 0);
+    // globals.clearColor = convertRGBToSRGB(SDL_FColor(0.5f, 0.5f, 0.5f, 1.0f));
 
     globals.camera.position = glm::vec3{ 0, EYE_HEIGHT, 3 };
     globals.camera.target = glm::vec3{ 0, EYE_HEIGHT, 0 };
 }
 
 void Game::setupPipeline() {
-    // KEEP IN MIND THE UNIFORM BUFFER COUNT
-    SDL_GPUShader* vertexShader = Shader::loadShader(globals.device, "PositionColorTexturePerspective.vert");
+    SDL_GPUShader* vertexShader = Shader::loadShader(globals.device, "Full.vert");
     if (!vertexShader) {
         SDL_Log("vertex shader failed ;(: %s", SDL_GetError());
         std::exit(1);
     }
 
-    // KEEP IN MIND THE UNIFORM BUFFER COUNT
-    SDL_GPUShader* fragmentShader = Shader::loadShader(globals.device, "CustomTexturedQuad.frag");
-    // SDL_GPUShader *fragmentShader =
-    //     loadShader(device, "SolidColor.frag", 0, 0, 0, 0);
+    SDL_GPUShader* fragmentShader = Shader::loadShader(globals.device, "Lighting.frag");
     if (!fragmentShader) {
         SDL_Log("fragment shader failed ;(: %s", SDL_GetError());
         std::exit(1);
@@ -107,7 +115,7 @@ void Game::setupPipeline() {
     // buffer_slot: 0 for Input
     // format: float3 Position
     // offset: how many bytes over from the start of Input
-    std::array<SDL_GPUVertexAttribute, 3> vertexAttributes{{
+    std::array<SDL_GPUVertexAttribute, 4> vertexAttributes{{
         {
             .location = 0,
             .buffer_slot = 0,
@@ -125,6 +133,12 @@ void Game::setupPipeline() {
             .buffer_slot = 0,
             .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
             .offset = offsetof(Vertex, uv),
+        },
+        {
+            .location = 3,
+            .buffer_slot = 0,
+            .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+            .offset = offsetof(Vertex, normal),
         },
     }};
 
@@ -246,7 +260,13 @@ void Game::update(float deltaTime) {
 
         ImGui::SliderFloat("float0", &globals.sliderFloat0, 0.0f, 0.01f);            // Edit 1 float using a slider from 0.0f to 1.0f
         ImGui::SliderFloat("float1", &globals.sliderFloat1, 1.0f, 1000.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+        //ImGui::SliderFloat("color slider", &globals.colorSlider, 0.0f, 1.0f); // Edit 3 floats representing a color
         ImGui::ColorEdit3("clear color", (float*)&globals.clearColor); // Edit 3 floats representing a color
+
+        ImGui::SeparatorText("Light");
+        ImGui::DragFloat3("Position", (float*)&globals.lightPosition);
+        ImGui::ColorEdit3("Color", (float*)&globals.lightColor); 
+        ImGui::SliderFloat("Intensity", &globals.lightIntensity, 0.0f, 5.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
 
         //if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
         //    counter++;
@@ -256,6 +276,8 @@ void Game::update(float deltaTime) {
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / globals.io->Framerate, globals.io->Framerate);
         ImGui::End();
     }
+
+    //globals.clearColor = convertRGBToSRGB(SDL_FColor{ globals.colorSlider, globals.colorSlider, globals.colorSlider, 1.0f });
 
     // rotation += deltaTime: 1 radian per second
     // want: pi radians per second
@@ -271,11 +293,17 @@ void Game::render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchain
     // create matrices so the gpu can use them to transform the vertices to
     // go on the screen where they belong
 
+
     glm::mat4 projectionMatrix = glm::perspective(glm::radians(70.0f), globals.aspectRatio, 0.01f, 1000.0f);
 
      //glm::mat4 viewMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -3.0f));
     glm::mat4 viewMatrix = glm::lookAt(globals.camera.position, globals.camera.target, glm::vec3{ 0.0f, 1.0f, 0.0f });
 
+    fragUniform.lightPosition = globals.lightPosition;
+    fragUniform.lightColor = globals.lightColor;
+    fragUniform.lightIntensity = globals.lightIntensity;
+
+    SDL_PushGPUVertexUniformData(commandBuffer, 0, &fragUniform, sizeof(fragUniform));
 
     // CREATE COLOR TARGET
 
@@ -284,8 +312,7 @@ void Game::render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchain
         .texture = swapchainTexture,
         // replace previous color, clear (screen?) with color
         .clear_color = globals.clearColor,
-        //colorTargetInfo.clearColor =
-        //    SDL_FColor{0x71 / 255.0f, 0x79 / 255.0f, 0x7E / 255.0f, 255 / 255.0f},
+        // .clearColor = SDL_FColor{0x71 / 255.0f, 0x79 / 255.0f, 0x7E / 255.0f, 255 / 255.0f},
         // discard previous content
         .load_op = SDL_GPU_LOADOP_CLEAR, // or SDL_GPU_LOADOP_LOAD to
         // keep the previous content
@@ -314,7 +341,9 @@ void Game::render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchain
         glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), entity.position) * glm::toMat4(entity.rotation);
 
         // calculate mvp matrix to send to the vertex shader
-        matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
+        //matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
+        matrixUniform.vp = projectionMatrix * viewMatrix;
+        matrixUniform.m = modelMatrix;
 
         Assets::Model& model = globals.models[entity.modelID];
         

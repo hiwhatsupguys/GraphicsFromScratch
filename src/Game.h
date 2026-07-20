@@ -8,8 +8,16 @@
 
 namespace Game {
 //public:
+    // cool website for alignment: https://maraneshi.github.io/HLSL-ConstantBufferLayoutVisualizer/
+    struct FragUniformBuffer {
+        glm::vec3 lightPosition;
+        alignas(16) glm::vec3 lightColor;
+        float lightIntensity;
+    };
     struct MatrixUniformBuffer {
-        glm::mat4 mvp;
+        // glm::mat4 mvp;
+        glm::mat4 vp;
+        glm::mat4 m;
     };
 
     typedef Uint32 ModelID;
@@ -36,6 +44,7 @@ namespace Game {
     void update(float deltaTime);
     void render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchainTexture);
 
+    static FragUniformBuffer fragUniform;
     static MatrixUniformBuffer matrixUniform;
 
 //private:

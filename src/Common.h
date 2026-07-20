@@ -44,11 +44,16 @@ public:
     typedef glm::vec2 Look;
     Look look{ 0.0f, 0.0f };
 
+    //float colorSlider = 0.0f;
     SDL_FColor clearColor;
     //Assets::Model model;
     std::vector<Assets::Model> models;
     //std::unordered_set<Game::Entity> entities;
     std::vector<Game::Entity> entities;
+
+    glm::vec3 lightPosition;
+    glm::vec3 lightColor;
+    float lightIntensity;
 
     bool isRotating = true;
 
@@ -77,5 +82,15 @@ public:
     }
 private:
 };
+
+template <typename Vec4>
+Vec4 convertRGBToSRGB(const Vec4 &color) {
+    Vec4 newColor;
+    for (int i = 0; i < 3; i++) {
+        const float &pF = reinterpret_cast<const float*>(&color)[i];
+        reinterpret_cast<float*>(&newColor)[i] = SDL_powf(pF, 2.2f);
+    }
+    return newColor;
+}
 
 extern Globals globals;

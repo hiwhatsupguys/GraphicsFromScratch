@@ -86,10 +86,12 @@ void initSDL() {
 
     // create gpu device with shaders for vulkan or metal and choose the best
     // driver NULL chooses the best driver
-    globals.device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV |
-        SDL_GPU_SHADERFORMAT_MSL |
-        SDL_GPU_SHADERFORMAT_DXIL,
-        true, nullptr);
+    //globals.device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV |
+    //    SDL_GPU_SHADERFORMAT_MSL |
+    //    SDL_GPU_SHADERFORMAT_DXIL,
+    //    true, nullptr);
+     //globals.device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL, true, nullptr);
+    globals.device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
 
     SDL_Log("Using graphics device: %s", SDL_GetStringProperty(SDL_GetGPUDeviceProperties(globals.device), SDL_PROP_GPU_DEVICE_NAME_STRING, nullptr));
 

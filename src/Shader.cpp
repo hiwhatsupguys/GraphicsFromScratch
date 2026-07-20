@@ -86,7 +86,7 @@ SDL_GPUShader* Shader::loadShader(SDL_GPUDevice* device, const std::string &shad
 Shader::ShaderInfo Shader::loadShaderInfoFromJson(const std::string &shaderFilename) {
     std::string jsonFilePath = COMPILED_SHADER_PATH + "/JSON/" + shaderFilename + ".json";
     std::ifstream jsonFile{ jsonFilePath };
-    if (!jsonFile) {
+    if (jsonFile.fail() || !jsonFile.is_open()) {
         SDL_Log("json file not found :(");
         std::exit(1);
     }
