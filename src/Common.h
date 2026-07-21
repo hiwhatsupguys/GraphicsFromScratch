@@ -16,9 +16,6 @@ public:
     //int windowWidth, windowHeight;
     float aspectRatio;
 
-    // specifies which shaders to use, how many buffers, vertex inputs, color
-    // blending
-    SDL_GPUGraphicsPipeline* fillPipeline;
     SDL_GPUTexture* depthTexture;
 
     SDL_GPUTextureFormat depthTextureFormat;
@@ -28,7 +25,6 @@ public:
     //SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 
     SDL_GPUTextureFormat swapchainTextureFormat;
-    SDL_GPUSampler* sampler;
 
     SDL_GPUTexture* colormapTexture;
 
@@ -36,26 +32,8 @@ public:
 
     ImGuiIO* io;
 
-    struct Camera {
-        glm::vec3 position;
-        glm::vec3 target;
-    } camera;
+    Game::GameState gameState;
 
-    typedef glm::vec2 Look;
-    Look look{ 0.0f, 0.0f };
-
-    //float colorSlider = 0.0f;
-    SDL_FColor clearColor;
-    //Assets::Model model;
-    std::vector<Assets::Model> models;
-    //std::unordered_set<Game::Entity> entities;
-    std::vector<Game::Entity> entities;
-
-    glm::vec3 lightPosition;
-    glm::vec3 lightColor;
-    float lightIntensity;
-
-    bool isRotating = true;
 
     bool cameraUpPressed;
     bool cameraDownPressed;

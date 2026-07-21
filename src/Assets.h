@@ -1,6 +1,7 @@
 #pragma once
 #include <SDL3/SDL.h>
 #include <string>
+#include <glm/glm.hpp>
 
 class Assets {
 public:
@@ -10,9 +11,17 @@ public:
         Uint32 numIndices;
     };
 
-    struct Model : public Mesh {
-        SDL_GPUTexture* colormapTexture;
+    struct Material {
+        SDL_GPUTexture* diffuseTexture;
+        glm::vec3 specularColor;
+        float specularShininess;
     };
+
+    struct Model {
+        Mesh mesh;
+        Material material;
+    };
+
 
     static Mesh loadObjFile(SDL_GPUCopyPass* copyPass, const std::string& modelPath);
     static SDL_GPUTexture *loadTextureFile(SDL_GPUCopyPass *copyPass, const std::string &textureFile);

@@ -5,19 +5,31 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <string>
+#include <vector>
+#include "Assets.h"
 
 namespace Game {
 //public:
     // cool website for alignment: https://maraneshi.github.io/HLSL-ConstantBufferLayoutVisualizer/
-    struct FragUniformBuffer {
+    struct FragGlobalUniformBuffer {
         glm::vec3 lightPosition;
         alignas(16) glm::vec3 lightColor;
         float lightIntensity;
+        glm::vec3 viewPosition;
+        alignas(16) glm::vec3 ambientLightColor;
     };
-    struct MatrixUniformBuffer {
-        // glm::mat4 mvp;
-        glm::mat4 vp;
-        glm::mat4 m;
+
+    struct FragLocalUniformBuffer {
+        glm::vec3 materialSpecularColor;
+        float materialShininess;
+    };
+
+    struct VertGlobalUniformBuffer {
+        glm::mat4 viewProjectionMat;
+    };
+    struct VertLocalUniformBuffer {
+        glm::mat4 modelMat;
+        glm::mat4 normalMat;
     };
 
     typedef Uint32 ModelID;
@@ -26,6 +38,42 @@ namespace Game {
         ModelID modelID;
         glm::vec3 position;
         glm::quat rotation; // rotation quaternion
+    };
+
+    struct GameState {
+        // specifies which shaders to use, how many buffers, vertex inputs, color
+        // blending
+        SDL_GPUGraphicsPipeline* pipeline;
+        SDL_GPUSampler* sampler;
+
+        struct Camera {
+            glm::vec3 position;
+            glm::vec3 target;
+        } camera;
+
+        typedef glm::vec2 Look;
+        Look look{ 0.0f, 0.0f };
+
+        //float colorSlider = 0.0f;
+        SDL_FColor clearColor;
+        //Assets::Model model;
+        std::vector<Assets::Model> models;
+        //std::unordered_set<Game::Entity> entities;
+        std::vector<Game::Entity> entities;
+
+        FragGlobalUniformBuffer fragGlobalUniform;
+        FragLocalUniformBuffer fragLocalUniform;
+        VertGlobalUniformBuffer vertGlobalUniform;
+        VertLocalUniformBuffer vertLocalUniform;
+
+        glm::vec3 lightPosition;
+        glm::vec3 lightColor;
+        float lightIntensity;
+
+        glm::vec3 ambientLightColor;
+
+        bool isRotating = true;
+
     };
 
     //struct Mesh {
@@ -44,8 +92,6 @@ namespace Game {
     void update(float deltaTime);
     void render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchainTexture);
 
-    static FragUniformBuffer fragUniform;
-    static MatrixUniformBuffer matrixUniform;
 
 //private:
 

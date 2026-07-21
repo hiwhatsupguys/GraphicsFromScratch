@@ -335,17 +335,17 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     ImGui_ImplSDLGPU3_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_ReleaseGPUGraphicsPipeline(globals.device, globals.fillPipeline);
+    SDL_ReleaseGPUGraphicsPipeline(globals.device, globals.gameState.pipeline);
 
     SDL_ReleaseGPUTexture(globals.device, globals.colormapTexture);
 
-    for (Assets::Model &model : globals.models) {
-        SDL_ReleaseGPUBuffer(globals.device, model.vertexBuffer);
-        SDL_ReleaseGPUBuffer(globals.device, model.indexBuffer);
+    for (Assets::Model &model : globals.gameState.models) {
+        SDL_ReleaseGPUBuffer(globals.device, model.mesh.vertexBuffer);
+        SDL_ReleaseGPUBuffer(globals.device, model.mesh.indexBuffer);
     }
 
     SDL_ReleaseGPUTexture(globals.device, globals.depthTexture);
-    SDL_ReleaseGPUSampler(globals.device, globals.sampler);
+    SDL_ReleaseGPUSampler(globals.device, globals.gameState.sampler);
 
     SDL_DestroyGPUDevice(globals.device);
     SDL_DestroyWindow(globals.window);

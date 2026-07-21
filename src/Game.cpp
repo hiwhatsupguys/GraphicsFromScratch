@@ -7,6 +7,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <array>
+#include <string>
 
 #include "Game.h"
 #include "Assets.h"
@@ -26,10 +27,12 @@
 void Game::init() {
     setupPipeline();
 
-    SDL_Log("Size of FragUniformBuffer: %llu", sizeof(FragUniformBuffer));
-    SDL_Log("offset of lightPosition: %llu", offsetof(FragUniformBuffer, lightPosition));
-    SDL_Log("offset of lightColor: %llu", offsetof(FragUniformBuffer, lightColor));
-    SDL_Log("offset of lightIntensity: %llu", offsetof(FragUniformBuffer, lightIntensity));
+    //SDL_Log("Size of FragGlobalUniformBuffer: %llu", sizeof(FragGlobalUniformBuffer));
+    //SDL_Log("offset of lightPosition: %llu", offsetof(FragGlobalUniformBuffer, lightPosition));
+    //SDL_Log("offset of lightColor: %llu", offsetof(FragGlobalUniformBuffer, lightColor));
+    //SDL_Log("offset of lightIntensity: %llu", offsetof(FragGlobalUniformBuffer, lightIntensity));
+    //SDL_Log("offset of viewPosition: %llu", offsetof(FragGlobalUniformBuffer, viewPosition));
+    //SDL_Log("offset of ambientLightColor: %llu", offsetof(FragGlobalUniformBuffer, ambientLightColor));
 
 
     SDL_GPUCommandBuffer* uploadCommandBuffer =
@@ -42,12 +45,26 @@ void Game::init() {
     globals.colormapTexture = Assets::loadTextureFile(copyPass, MESH_PATH);
 
     //globals.model = Assets::loadModel(copyPass, MESH_PATH, MODEL_PATH);
-    globals.models.insert(globals.models.end(), {
-        {Assets::loadObjFile(copyPass, "Content/Meshes/sedan-sports.obj"), globals.colormapTexture},
-        {Assets::loadObjFile(copyPass, "Content/Meshes/van.obj"), globals.colormapTexture},
+    globals.gameState.models.insert(globals.gameState.models.end(), {
+        {
+            .mesh = Assets::loadObjFile(copyPass, "Content/Meshes/sedan-sports.obj"),
+            .material = {
+                .diffuseTexture = globals.colormapTexture, 
+                .specularColor = {0.0f, 0.0f, 0.0f}, 
+                .specularShininess = 80.0f,
+            },
+        },
+        {
+            .mesh = Assets::loadObjFile(copyPass, "Content/Meshes/van.obj"),
+            .material = {
+                .diffuseTexture = globals.colormapTexture, 
+                .specularColor = {1.0f, 1.0f, 1.0f}, 
+                .specularShininess = 160.0f,
+            }
+        },
     });
 
-    globals.entities.insert(globals.entities.end(), {
+    globals.gameState.entities.insert(globals.gameState.entities.end(), {
         {
             .modelID = 0,
             .position = {},
@@ -60,21 +77,23 @@ void Game::init() {
         },
     });
 
-    globals.lightPosition = {3.0f, 3.0f, 3.0f};
-    globals.lightColor = { 1.0f, 0.0f, 0.0f };
-    globals.lightIntensity = 1.0f;
+    globals.gameState.lightPosition = {3.0f, 3.0f, 3.0f};
+    globals.gameState.lightColor = { 1.0f, 1.0f, 1.0f };
+    globals.gameState.lightIntensity = 1.0f;
+
+    globals.gameState.ambientLightColor = { 0.1f, 0.1f, 0.1f };
 
     // END LOAD MODELS HERE
 
     SDL_EndGPUCopyPass(copyPass);
     SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
 
-    globals.clearColor = convertRGBToSRGB(SDL_FColor(0.45f, 0.55f, 0.60f, 1.00f));
-    globals.clearColor = SDL_FColor(0, 0, 0, 0);
+    globals.gameState.clearColor = convertRGBToSRGB(SDL_FColor(0.45f, 0.55f, 0.60f, 1.00f));
+    globals.gameState.clearColor = SDL_FColor(0, 0, 0, 0);
     // globals.clearColor = convertRGBToSRGB(SDL_FColor(0.5f, 0.5f, 0.5f, 1.0f));
 
-    globals.camera.position = glm::vec3{ 0, EYE_HEIGHT, 3 };
-    globals.camera.target = glm::vec3{ 0, EYE_HEIGHT, 0 };
+    globals.gameState.camera.position = glm::vec3{ 0, EYE_HEIGHT, 3 };
+    globals.gameState.camera.target = glm::vec3{ 0, EYE_HEIGHT, 0 };
 }
 
 void Game::setupPipeline() {
@@ -173,8 +192,8 @@ void Game::setupPipeline() {
 ,
     };
 
-    globals.fillPipeline = SDL_CreateGPUGraphicsPipeline(globals.device, &pipelineInfo);
-    if (!globals.fillPipeline) {
+    globals.gameState.pipeline = SDL_CreateGPUGraphicsPipeline(globals.device, &pipelineInfo);
+    if (!globals.gameState.pipeline) {
         SDL_Log("Failed to create graphics pipeline, error: %s", SDL_GetError());
         std::exit(1);
     }
@@ -191,7 +210,7 @@ void Game::setupPipeline() {
         .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
         .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
     };
-    globals.sampler = SDL_CreateGPUSampler(globals.device, &samplerCreateInfo);
+    globals.gameState.sampler = SDL_CreateGPUSampler(globals.device, &samplerCreateInfo);
 }
 
 void Game::updateCamera(float deltaTime) {
@@ -213,11 +232,11 @@ void Game::updateCamera(float deltaTime) {
     if (globals.mouseVelocityVector.x != 0.0f || globals.mouseVelocityVector.y != 0.0f) {
 
         // wrap angle (yaw)
-        globals.look.x = SDL_fmodf(globals.look.x - globals.mouseVelocityVector.x * MOUSE_SENSITIVITY,
+        globals.gameState.look.x = SDL_fmodf(globals.gameState.look.x - globals.mouseVelocityVector.x * MOUSE_SENSITIVITY,
             2.0f * SDL_PI_F);
         // clamp to -90, 90 (pitch)
-        globals.look.y =
-            SDL_clamp(globals.look.y - globals.mouseVelocityVector.y * MOUSE_SENSITIVITY,
+        globals.gameState.look.y =
+            SDL_clamp(globals.gameState.look.y - globals.mouseVelocityVector.y * MOUSE_SENSITIVITY,
                 glm::radians(-89.0f), glm::radians(89.0f));
 
         //SDL_Log("%f, %f", look.yaw, look.pitch);
@@ -226,7 +245,7 @@ void Game::updateCamera(float deltaTime) {
     //glm::mat3 yawPitchRollMatrix =
     //    glm::yawPitchRoll(look.getValue().x, look.getValue().y, 0.0f);
 
-    glm::mat3 yawPitchRollMatrix = glm::yawPitchRoll(globals.look.x, globals.look.y, 0.0f);
+    glm::mat3 yawPitchRollMatrix = glm::yawPitchRoll(globals.gameState.look.x, globals.gameState.look.y, 0.0f);
 
     // glm::vec3 lookDirection{SDL_sinf(look.yaw), 0.0f,
     // SDL_cosf(look.yaw)};
@@ -244,8 +263,8 @@ void Game::updateCamera(float deltaTime) {
     // deltatimeify
     movementDirection = movementDirection * CAMERA_SPEED * deltaTime;
 
-    globals.camera.position += movementDirection;
-    globals.camera.target = globals.camera.position + forward;
+    globals.gameState.camera.position += movementDirection;
+    globals.gameState.camera.target = globals.gameState.camera.position + forward;
 }
 
 void Game::update(float deltaTime) {
@@ -256,17 +275,33 @@ void Game::update(float deltaTime) {
 
         //ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
         //ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-        ImGui::Checkbox("Rotate Model", &globals.isRotating);
+        ImGui::Checkbox("Rotate Model", &globals.gameState.isRotating);
 
         ImGui::SliderFloat("float0", &globals.sliderFloat0, 0.0f, 0.01f);            // Edit 1 float using a slider from 0.0f to 1.0f
         ImGui::SliderFloat("float1", &globals.sliderFloat1, 1.0f, 1000.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
         //ImGui::SliderFloat("color slider", &globals.colorSlider, 0.0f, 1.0f); // Edit 3 floats representing a color
-        ImGui::ColorEdit3("clear color", (float*)&globals.clearColor); // Edit 3 floats representing a color
+        ImGui::ColorEdit3("clear color", (float*)&globals.gameState.clearColor); // Edit 3 floats representing a color
 
         ImGui::SeparatorText("Light");
-        ImGui::DragFloat3("Position", (float*)&globals.lightPosition);
-        ImGui::ColorEdit3("Color", (float*)&globals.lightColor); 
-        ImGui::SliderFloat("Intensity", &globals.lightIntensity, 0.0f, 5.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+        ImGui::DragFloat3("Position", (float*)&globals.gameState.lightPosition);
+        ImGui::ColorEdit3("Color", (float*)&globals.gameState.lightColor); 
+        ImGui::SliderFloat("Intensity", &globals.gameState.lightIntensity, 0.0f, 50.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+        ImGui::ColorEdit3("Ambient Light Color", (float*)&globals.gameState.ambientLightColor);            // Edit 1 float using a slider from 0.0f to 1.0f
+
+
+
+        for (int i = 0; i < globals.gameState.entities.size(); i++) {
+            Entity& entity = globals.gameState.entities[i];
+            Assets::Model& model = globals.gameState.models[entity.modelID];
+            Assets::Mesh& mesh = model.mesh;
+            Assets::Material& material = model.material;
+
+            ImGui::PushID(i);
+            ImGui::SeparatorText(("Object " + std::to_string(i)).c_str());
+            ImGui::ColorEdit3("Specular Color", (float*)&material.specularColor);
+            ImGui::DragFloat("Shininess", &material.specularShininess, 1.0f, 1.0f, 500.0f);
+            ImGui::PopID();
+        }
 
         //if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
         //    counter++;
@@ -281,8 +316,8 @@ void Game::update(float deltaTime) {
 
     // rotation += deltaTime: 1 radian per second
     // want: pi radians per second
-    if (globals.isRotating) {
-        globals.entities[0].rotation *= glm::quat{ glm::vec3{0.0f, ROTATION_SPEED * deltaTime, 0.0f} };
+    if (globals.gameState.isRotating) {
+        globals.gameState.entities[0].rotation *= glm::quat{ glm::vec3{0.0f, ROTATION_SPEED * deltaTime, 0.0f} };
     }
     //globals.rotation += globals.isRotating ? ROTATION_SPEED * deltaTime : 0.0f;
 
@@ -297,13 +332,23 @@ void Game::render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchain
     glm::mat4 projectionMatrix = glm::perspective(glm::radians(70.0f), globals.aspectRatio, 0.01f, 1000.0f);
 
      //glm::mat4 viewMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -3.0f));
-    glm::mat4 viewMatrix = glm::lookAt(globals.camera.position, globals.camera.target, glm::vec3{ 0.0f, 1.0f, 0.0f });
+    glm::mat4 viewMatrix = glm::lookAt(globals.gameState.camera.position, globals.gameState.camera.target, glm::vec3{ 0.0f, 1.0f, 0.0f });
 
-    fragUniform.lightPosition = globals.lightPosition;
-    fragUniform.lightColor = globals.lightColor;
-    fragUniform.lightIntensity = globals.lightIntensity;
 
-    SDL_PushGPUVertexUniformData(commandBuffer, 0, &fragUniform, sizeof(fragUniform));
+    globals.gameState.vertGlobalUniform = {
+        .viewProjectionMat = projectionMatrix * viewMatrix // calculate vp matrix to send to the vertex shader
+    }; 
+    SDL_PushGPUVertexUniformData(commandBuffer, 0, &globals.gameState.vertGlobalUniform, sizeof(globals.gameState.vertGlobalUniform)); // push vertex uniform data so the gpu can perform the matrix multiplication
+
+    globals.gameState.fragGlobalUniform = {
+        .lightPosition = globals.gameState.lightPosition,
+        .lightColor = globals.gameState.lightColor,
+        .lightIntensity = globals.gameState.lightIntensity,
+        .viewPosition = globals.gameState.camera.position,
+        .ambientLightColor = globals.gameState.ambientLightColor,
+    };
+
+    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &globals.gameState.fragGlobalUniform, sizeof(globals.gameState.fragGlobalUniform));
 
     // CREATE COLOR TARGET
 
@@ -311,7 +356,7 @@ void Game::render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchain
     SDL_GPUColorTargetInfo colorTargetInfo{
         .texture = swapchainTexture,
         // replace previous color, clear (screen?) with color
-        .clear_color = globals.clearColor,
+        .clear_color = globals.gameState.clearColor,
         // .clearColor = SDL_FColor{0x71 / 255.0f, 0x79 / 255.0f, 0x7E / 255.0f, 255 / 255.0f},
         // discard previous content
         .load_op = SDL_GPU_LOADOP_CLEAR, // or SDL_GPU_LOADOP_LOAD to
@@ -334,49 +379,52 @@ void Game::render(SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *swapchain
     // at the same time num_color_targets: size of array
     SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, &depthStencilTargetInfo);
 
+    // bind the graphics pipeline (since we're using this pipeline for all our models, we can just bind it once)
+    SDL_BindGPUGraphicsPipeline(renderPass, globals.gameState.pipeline);
 
-    for (const Entity &entity : globals.entities) {
+
+    for (const Entity &entity : globals.gameState.entities) {
         // 3d (4d) rotation matrix
         //glm::mat4 modelMatrix = glm::rotate(glm::mat4(1.0f), globals.rotation, glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), entity.position) * glm::toMat4(entity.rotation);
 
-        // calculate mvp matrix to send to the vertex shader
-        //matrixUniform.mvp = projectionMatrix * viewMatrix * modelMatrix;
-        matrixUniform.vp = projectionMatrix * viewMatrix;
-        matrixUniform.m = modelMatrix;
 
-        Assets::Model& model = globals.models[entity.modelID];
+        globals.gameState.vertLocalUniform = {
+            .modelMat = modelMatrix,
+            .normalMat = glm::inverse(glm::transpose(modelMatrix)),
+        };
+        SDL_PushGPUVertexUniformData(commandBuffer, 1, &globals.gameState.vertLocalUniform, sizeof(globals.gameState.vertLocalUniform));
+
+
+        Assets::Model& model = globals.gameState.models[entity.modelID];
+
+        globals.gameState.fragLocalUniform = {
+            .materialSpecularColor = model.material.specularColor,
+            .materialShininess = model.material.specularShininess,
+        };
+        SDL_PushGPUFragmentUniformData(commandBuffer, 1, &globals.gameState.fragLocalUniform, sizeof(globals.gameState.fragLocalUniform));
         
-        // bind the graphics pipeline
-        SDL_BindGPUGraphicsPipeline(renderPass, globals.fillPipeline);
 
         // DRAW SOMETHING
         SDL_GPUBufferBinding vertexBufferBinding{
-            .buffer = model.vertexBuffer,
+            .buffer = model.mesh.vertexBuffer,
             .offset = 0,
         };
         SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
 
         SDL_GPUBufferBinding indexBufferBinding{
-            .buffer = model.indexBuffer,
+            .buffer = model.mesh.indexBuffer,
             .offset = 0,
         };
         SDL_BindGPUIndexBuffer(renderPass, &indexBufferBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
         SDL_GPUTextureSamplerBinding textureSamplerBinding{
-            .texture = model.colormapTexture,
-            .sampler = globals.sampler,
+            .texture = model.material.diffuseTexture,
+            .sampler = globals.gameState.sampler,
         };
         SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
 
-        // push vertex uniform data so the gpu can perform the matrix
-        // multiplication
-        SDL_PushGPUVertexUniformData(commandBuffer, 0, &matrixUniform, sizeof(matrixUniform));
-
-        // fragment shader uniforms
-        // SDL_PushGPUFragmentUniformData();
-
-        SDL_DrawGPUIndexedPrimitives(renderPass, model.numIndices, 1, 0, 0, 0);
+        SDL_DrawGPUIndexedPrimitives(renderPass, model.mesh.numIndices, 1, 0, 0, 0);
     }
 
 
